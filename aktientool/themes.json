@@ -1,0 +1,79 @@
+{
+  "_hinweis": "Anlagethemen für die Weltauswahl. Eine Aktie gehört zu einem Thema, wenn ihr Ticker (Yahoo-Schreibweise der Heimatbörse) oder ihre ISIN unter 'aktien' steht, ihre Branche unter 'branchen' (deutsche Namen wie in der Weltauswahl) oder ihr Firmenname zu einem Muster unter 'namen' passt (regulärer Ausdruck, ohne Groß-/Kleinschreibung). 'kurz' ist die Bezeichnung in der Tabelle. Die Listen sind eine redaktionelle Auswahl, keine Empfehlung, und lassen sich frei bearbeiten; Änderungen wirken nach einem Neuladen der Seite.",
+  "themes": {
+    "Künstliche Intelligenz": {
+      "kurz": "KI",
+      "beschreibung": "Chips, Server, Netzwerktechnik, Cloud und Software, mit denen KI entwickelt und betrieben wird.",
+      "aktien": ["NVDA", "AMD", "AVGO", "2330.TW", "MU", "000660.KS", "005930.KS", "ARM", "MRVL", "ASML.AS", "AMAT", "LRCX", "KLAC",
+                 "8035.T", "6857.T", "SNPS", "CDNS", "ANET", "SMCI", "DELL", "HPE", "VRT", "CRDO", "ALAB", "CLS.TO", "2317.TW",
+                 "2382.TW", "3231.TW", "COHR", "LITE", "300308.SZ", "300502.SZ", "688256.SS", "2454.TW", "6669.TW", "3017.TW",
+                 "2345.TW", "MSFT", "GOOGL", "META", "AMZN", "ORCL", "PLTR", "NOW", "CRM", "SNOW", "DDOG", "MDB", "PATH", "SAP.DE",
+                 "ADBE", "IBM", "9988.HK", "0700.HK", "9888.HK", "0020.HK", "CRWV", "NBIS", "APP", "TEM", "9984.T", "IFX.DE"],
+      "namen": ["\\bAI\\b", "\\.ai\\b", "Artificial Intelligence"]
+    },
+    "Robotik & Automatisierung": {
+      "kurz": "Robotik",
+      "beschreibung": "Industrieroboter, Antriebe und Sensorik, Fabrik- und Lagerautomatisierung, Medizinroboter und humanoide Roboter.",
+      "aktien": ["ABBN.SW", "6954.T", "6506.T", "6861.T", "ISRG", "ROK", "TER", "CGNX", "ZBRA", "6324.T", "6268.T", "6645.T", "6273.T",
+                 "HEXA-B.ST", "6383.T", "SYM", "9880.HK", "454910.KS", "277810.KQ", "002747.SZ", "300124.SZ", "688017.SS", "KGX.DE",
+                 "JUN3.DE", "EMR", "SU.PA", "6503.T", "6481.T", "NDSN", "SYK", "GMED", "TSLA", "6113.T", "6465.T", "7012.T", "SIE.DE",
+                 "1810.HK", "9618.HK"],
+      "namen": ["Robot"]
+    },
+    "Humanoide Robotik": {
+      "kurz": "Humanoide",
+      "beschreibung": "Entwickler menschenähnlicher Roboter (z. B. Tesla Optimus, UBTech Walker, Boston Dynamics Atlas über Hyundai) sowie Zulieferer von Gelenkantrieben, Getrieben, Gewindetrieben, Sensorik und KI-Chips dafür.",
+      "aktien": ["TSLA", "9880.HK", "1810.HK", "005380.KS", "277810.KQ", "9868.HK", "7012.T", "688585.SS",
+                 "NVDA", "9660.HK", "688322.SS",
+                 "6324.T", "6268.T", "688017.SS", "002050.SZ", "601689.SS", "002472.SZ", "003021.SZ", "6481.T",
+                 "012330.KS", "SHA0.DE", "300124.SZ"],
+      "namen": ["Humanoid"]
+    },
+    "Cybersecurity": {
+      "kurz": "Cyber",
+      "beschreibung": "Schutz von Netzwerken, Cloud, Endgeräten und Identitäten vor Angriffen.",
+      "aktien": ["CRWD", "PANW", "FTNT", "ZS", "NET", "OKTA", "CHKP", "S", "TENB", "QLYS", "VRNS", "GEN", "4704.T", "AKAM", "RBRK",
+                 "CVLT", "FFIV", "300454.SZ", "HO.PA", "LDOS", "SAIL"],
+      "namen": ["Cyber"]
+    },
+    "Rechenzentren & Stromnetze": {
+      "kurz": "Rechenzentren",
+      "beschreibung": "Betreiber und Ausrüster von Rechenzentren, Kühlung, Stromversorgung und Netzausbau – die Infrastruktur hinter Cloud und KI.",
+      "aktien": ["EQIX", "DLR", "IRM", "VRT", "ETN", "SU.PA", "PWR", "GEV", "ENR.DE", "CEG", "VST", "TLN", "NRG", "NXT.AX", "LR.PA",
+                 "HUBB", "NVT", "MOD", "TT", "APH", "6501.T", "SIE.DE", "ABBN.SW", "6503.T", "PRY.MI", "NEX.PA", "2308.TW", "CRWV",
+                 "NBIS", "APLD", "IREN", "CORZ", "6367.T", "BE", "GLW", "CIEN", "ANET"],
+      "namen": ["Data Cent"]
+    },
+    "Elektromobilität & Batterien": {
+      "kurz": "E-Mobilität",
+      "beschreibung": "Hersteller von Elektroautos, Batteriezellen und -materialien sowie Lithium.",
+      "aktien": ["TSLA", "002594.SZ", "300750.SZ", "373220.KS", "006400.KS", "051910.KS", "ALB", "SQM", "PLS.AX", "RIVN", "9866.HK",
+                 "9868.HK", "2015.HK", "9863.HK", "300014.SZ", "6752.T", "002460.SZ", "002466.SZ", "1810.HK", "0175.HK", "MIN.AX",
+                 "096770.KS", "247540.KQ", "086520.KQ", "003670.KS"],
+      "namen": ["Lithium", "Batter", "Electric Vehicle"]
+    },
+    "Erneuerbare Energien": {
+      "kurz": "Erneuerbare",
+      "beschreibung": "Wind- und Solarenergie, Wasserkraft und Wasserstoff: Hersteller, Projektentwickler und Stromerzeuger.",
+      "aktien": ["VWS.CO", "ORSTED.CO", "NEE", "ENPH", "FSLR", "IBE.MC", "RWE.DE", "EDPR.LS", "ENR.DE", "NDX1.DE", "BEP-UN.TO",
+                 "BEPC.TO", "601012.SS", "600438.SS", "300274.SZ", "ENEL.MI", "SSE.L", "BE", "NXT", "ANE.MC", "ACX.MC", "3800.HK",
+                 "001289.SZ", "600900.SS", "600905.SS", "ERG.MI"],
+      "branchen": ["Solar", "Erneuerbare Energien"],
+      "namen": ["Renewable", "\\bWind\\b", "Hydrogen"]
+    },
+    "Rüstung & Verteidigung": {
+      "kurz": "Rüstung",
+      "beschreibung": "Hersteller von Waffensystemen, Munition, Militärfahrzeugen, Marineschiffen und Verteidigungselektronik.",
+      "aktien": ["RHM.DE", "HAG.DE", "R3NK.DE", "TKMS.DE", "BA.L", "LMT", "NOC", "GD", "RTX", "LHX", "HII", "LDO.MI", "SAAB-B.ST",
+                 "HO.PA", "KOG.OL", "012450.KS", "272210.KS", "042660.KS", "ESLT.TA", "AM.PA", "CSG.AS", "KTOS", "AVAV", "PLTR",
+                 "7011.T", "7012.T", "BWXT", "CW", "064350.KS", "079550.KS", "047810.KS", "600760.SS", "QQ.L", "SAF.PA"],
+      "namen": ["Defen[cs]e", "Rüstung"]
+    },
+    "Quantencomputing": {
+      "kurz": "Quanten",
+      "beschreibung": "Firmen, die Quantencomputer bauen oder als große Konzerne maßgeblich daran forschen.",
+      "aktien": ["IONQ", "RGTI", "QBTS", "IBM", "GOOGL", "HON"],
+      "namen": ["Quantum Comput"]
+    }
+  }
+}

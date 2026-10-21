@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aktientool</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    // Theme vor dem ersten Rendern setzen, damit nichts aufblitzt
+    try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M6 22l6-7 5 4 9-11"/></svg>
+        <span>Aktientool</span>
+      </a>
+      <div class="search" id="search">
+        <input id="search-input" type="search" placeholder="Aktie suchen: Name, Ticker …" autocomplete="off" aria-label="Aktie suchen">
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+      </div>
+      <nav class="mainnav">
+        <a href="#/welt" data-nav="welt">Weltauswahl</a>
+        <a href="#/screener" data-nav="screener">Screener</a>
+        <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
+        <a href="#/depot" data-nav="depot">Depot</a>
+        <a href="#/alarme" data-nav="alarme">Alarme <span class="nav-badge" id="alert-badge" hidden></span></a>
+        <details class="navmore" id="navmore">
+          <summary>Mehr</summary>
+          <div class="navmore-panel">
+            <a href="#/termine" data-nav="termine">Termine</a>
+            <a href="#/vergleich" data-nav="vergleich">Vergleich</a>
+            <a href="#/score-check" data-nav="score-check">Score-Check</a>
+            <a href="#/lexikon" data-nav="lexikon">Lexikon</a>
+          </div>
+        </details>
+        <button id="theme-toggle" class="icon-btn" type="button" title="Darstellung wechseln" aria-label="Darstellung wechseln"></button>
+      </nav>
+    </div>
+  </header>
+  <main id="app" class="container"></main>
+  <footer class="footer container">
+    Daten: Yahoo Finance (über yfinance) und SEC EDGAR. Keine Anlageberatung; alle Angaben ohne Gewähr.
+  </footer>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
