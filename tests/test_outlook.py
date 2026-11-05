@@ -23,9 +23,9 @@ def catalog(tmp_path, monkeypatch):
 def test_shipped_catalog_has_complete_evidence():
     data = json.loads(outlook.CATALOG_FILE.read_text("utf-8"))
     outlook.validate(data)
-    assert len(data["profiles"]) == 5
+    assert len(data["profiles"]) >= 5
     for p in data["profiles"]:
-        found = outlook.for_company(p["symbols"][0], today=TODAY)
+        found = outlook.for_company(p["symbols"][0], today=dt.date.fromisoformat(p["reviewed_at"]))
         assert found["status"] == "available"
         assert len(found["profile"]["watch"]) == 3
 

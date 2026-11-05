@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_note": "Redaktionelle Startauswahl, geprüft am 2026-10-29. Chancen, Risiken, Blickwinkel und Zeitverläufe sind eigene qualitative Ableitungen aus den verlinkten Quellen, keine Unternehmensprognosen. reported bedeutet vom Unternehmen berichtet, nicht unabhängig nachgewiesen. Quellen und Prüfdatum bei jeder inhaltlichen Aktualisierung prüfen. Keine automatische Fortschreibung durch Nachrichten oder Kursabrufe.",
+  "_note": "Redaktionelle Auswahl; das Prüfdatum steht je Unternehmen in reviewed_at. Chancen, Risiken, Blickwinkel und Zeitverläufe sind eigene qualitative Ableitungen aus den verlinkten Quellen, keine Unternehmensprognosen. reported bedeutet vom Unternehmen berichtet, nicht unabhängig nachgewiesen. Quellen und Prüfdatum bei jeder inhaltlichen Aktualisierung prüfen. Keine automatische Fortschreibung durch Nachrichten oder Kursabrufe.",
   "profiles": [
     {
       "name": "Microsoft",
@@ -160,6 +160,267 @@
       ],
       "sources": [
         {"id": "factory", "title": "KI-Anwendungen im Werk Erlangen", "publisher": "Siemens Presse", "published": "2026-10-19", "url": "https://press.siemens.com/global/en/pressrelease/siemens-partners-nvidia-advance-ai-driven-autonomous-factories"}
+      ]
+    },
+    {
+      "name": "Apple",
+      "symbols": ["AAPL"],
+      "isins": ["US0378331005"],
+      "theme": "KI auf Geräten und Siri",
+      "reviewed_at": "2026-11-05",
+      "summary": "Apple verdient vor allem an Geräten und Diensten. KI könnte neue Käufe und zusätzliche Dienstleistungen anstoßen. Offen ist, ob Kunden dafür mehr bezahlen und wie stark Rechen- und Speicherkosten die Marge belasten.",
+      "opportunity": {"level": "medium", "text": "Ein neuer, KI-gestützter Siri-Assistent könnte Gerätewechsel und die Nutzung von Diensten fördern.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Stark steigende Speicherpreise und laufende Cloud-Kosten für KI-Funktionen könnten die Bruttomarge drücken.", "source_ids": ["call"]},
+      "short_term": "0–2 Jahre: Die Einführung von Siri AI kann das Gerätegeschäft stützen; höhere Speicherkosten belasten gleichzeitig die Marge.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob KI einen eigenen bezahlten Dienst trägt oder nur als Kaufargument für Geräte wirkt.",
+      "uncertainty": "Rekordumsätze beim iPhone lassen sich nicht eindeutig auf KI-Funktionen zurückführen; Produktzyklen und Preise spielen ebenfalls mit.",
+      "dimensions": [
+        {"key": "cost", "text": "Server-seitige KI-Funktionen verursachen laufende Rechenkosten, die Apple in den Kosten der Dienste verbucht.", "source_ids": ["results", "call"]},
+        {"key": "revenue", "text": "Zusätzliche, kostenpflichtige KI-Kapazität könnte langfristig Diensteerlöse ergänzen.", "source_ids": ["results", "call"]},
+        {"key": "business", "text": "Ein Assistent, der Aufgaben über Apps hinweg erledigt, könnte verändern, wie Nutzer Apps und Dienste ansteuern.", "source_ids": ["results", "call"]},
+        {"key": "moat", "text": "Die große Gerätebasis und die Verknüpfung von Hardware, Software und Diensten könnten die Verbreitung erleichtern.", "source_ids": ["results", "call"]},
+        {"key": "execution", "text": "Siri AI muss zuverlässig funktionieren, damit der Assistent Vertrauen und Nutzung gewinnt.", "source_ids": ["results", "call"]}
+      ],
+      "watch": [
+        {"label": "Nutzung von Siri AI", "text": "Steigen Nutzung und bezahlte Zusatzkapazität nach der Einführung?"},
+        {"label": "Bruttomarge", "text": "Wie stark drücken Speicherpreise und KI-Cloud-Kosten die Marge?", "metric": "operating_margin"},
+        {"label": "Diensteerlöse", "text": "Wachsen die Dienste weiter, und wird ein KI-Beitrag erkennbar?"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Apple meldet für das vierte Geschäftsquartal 2026 einen Umsatz von 114,5 Mrd. US-Dollar, 12 % mehr als im Vorjahr, und eine Bruttomarge von 47,9 %, davon rund ein Prozentpunkt aus Zollrückerstattungen.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "Im Ergebnisgespräch bezeichnet Apple die aktuellen Speicherpreise als beispiellos und erwartet für das Dezemberquartal eine Bruttomarge von 45–46 %.", "source_ids": ["call"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q4 FY2026", "publisher": "Apple Newsroom", "published": "2026-11-02", "url": "https://www.apple.com/newsroom/2026/11/apple-reports-fourth-quarter-results/"},
+        {"id": "call", "title": "Bericht zum Ergebnisgespräch Q4 2026", "publisher": "MacRumors", "published": "2026-11-02", "url": "https://macrumors.com/2026/11/02/apple-4q-2026-earnings"}
+      ]
+    },
+    {
+      "name": "Alphabet",
+      "symbols": ["GOOGL", "GOOG"],
+      "isins": ["US02079K3059", "US02079K1079"],
+      "theme": "KI in Suche, Cloud und eigenen Modellen",
+      "reviewed_at": "2026-11-05",
+      "summary": "Alphabet verdient mit KI an zwei Stellen: über Cloud-Kunden und über die eigene Suche. Gleichzeitig steigen die Investitionen stark. Entscheidend ist, ob KI-Antworten das Werbegeschäft der Suche stärken statt ersetzen.",
+      "opportunity": {"level": "high", "text": "Hohe Nachfrage nach KI-Infrastruktur und eigenen Modellen treibt das Cloud-Geschäft.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Sehr hohe Investitionen und mögliche Verschiebungen im Suchverhalten könnten Ertrag und Werbeerlöse belasten.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: Cloud-Wachstum und KI-Funktionen in der Suche bringen Umsatz; die Investitionen verdoppeln sich gegenüber dem Vorjahr.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob KI-gestützte Suche ähnlich gut monetarisiert wie die klassische Suche und ob sich die Rechenzentren auszahlen.",
+      "uncertainty": "Die Zahl der Nutzer und verarbeiteten Tokens sagt nichts darüber aus, wie viel Gewinn die einzelne KI-Nutzung abwirft.",
+      "dimensions": [
+        {"key": "cost", "text": "Eigene Chips und Modelle könnten Rechenkosten je Anfrage senken; Abschreibungen auf Rechenzentren steigen.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Cloud-Kunden und Modellschnittstellen bringen zusätzliche, nutzungsabhängige Erlöse.", "source_ids": ["results"]},
+        {"key": "business", "text": "KI-Antworten könnten verändern, wie oft Nutzer auf Anzeigen und Webseiten klicken.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Eigene Modelle, Chips, Rechenzentren und große Nutzerbasis greifen ineinander.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Der Ausbau muss mit der Nachfrage Schritt halten, ohne Überkapazitäten aufzubauen.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "Cloud-Marge", "text": "Bleibt das Cloud-Wachstum bei steigender Profitabilität erhalten?"},
+        {"label": "Suchwerbung", "text": "Wachsen die Sucherlöse auch mit mehr KI-Antworten weiter?"},
+        {"label": "Investitionen und Cashflow", "text": "Wie entwickelt sich der freie Cashflow bei weiter steigenden Investitionen?", "metric": "fcf_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Alphabet meldet für Q3 2026 einen Umsatz von 127,6 Mrd. US-Dollar (+25 %) und Google-Cloud-Erlöse von 30,7 Mrd. US-Dollar (+103 %).", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Die Investitionen in Sachanlagen lagen im Quartal bei 51,4 Mrd. US-Dollar nach 24,0 Mrd. US-Dollar im Vorjahresquartal.", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Die Erlöse aus Google-Suche und Sonstigem stiegen um 12 % auf 63,4 Mrd. US-Dollar.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 2026 (PDF)", "publisher": "Alphabet Investor Relations", "published": "2026-10-28", "url": "https://s206.q4cdn.com/479360582/files/doc_financials/2026/q3/2026q3-alphabet-earnings-release.pdf"}
+      ]
+    },
+    {
+      "name": "Amazon",
+      "symbols": ["AMZN"],
+      "isins": ["US0231351067"],
+      "theme": "KI-Cloud und Automatisierung im Handel",
+      "reviewed_at": "2026-11-05",
+      "summary": "Amazon kann über AWS an KI-Anwendungen seiner Kunden verdienen und eigene Abläufe automatisieren. Die Investitionen übersteigen derzeit den operativen Mittelzufluss deutlich.",
+      "opportunity": {"level": "high", "text": "Wachsende Nachfrage nach KI-Rechenleistung, Modellen und Agenten beschleunigt das AWS-Wachstum.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Sehr hohe Investitionen führen zu negativem freiem Cashflow; die Rendite hängt von dauerhafter Kundennachfrage ab.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: AWS wächst kräftig; der Ausbau der Rechenzentren belastet den freien Cashflow.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob die geplanten Wachstumsraten eintreten und die neue Kapazität gut ausgelastet ist.",
+      "uncertainty": "Die angekündigten Wachstumsraten für AWS sind Planungen des Managements, keine Ergebnisse.",
+      "dimensions": [
+        {"key": "cost", "text": "Automatisierung in Logistik und Verwaltung könnte Kosten senken; Abschreibungen auf Rechenzentren steigen.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Mehr KI-Nutzung bei AWS-Kunden schafft zusätzliche Cloud-Erlöse.", "source_ids": ["results"]},
+        {"key": "business", "text": "Eigene Chips und Agentendienste könnten AWS vom reinen Infrastrukturanbieter zur KI-Plattform verschieben.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Große Kundenbasis und eigene Chips könnten Kostenvorteile gegenüber Wettbewerbern bieten.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Ausbau von Strom, Rechenzentren und Chips muss mit der Nachfrage Schritt halten.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "AWS-Wachstum", "text": "Hält AWS das hohe Wachstum, wie vom Management angekündigt?"},
+        {"label": "Freier Cashflow", "text": "Wird der freie Cashflow nach dem Investitionshöhepunkt wieder positiv?", "metric": "fcf_margin"},
+        {"label": "Marge", "text": "Bleibt die operative Marge trotz steigender Abschreibungen hoch?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Amazon meldet für Q3 2026 AWS-Erlöse von 46,0 Mrd. US-Dollar (+39 %) und eine operative Marge des Konzerns von 13,9 %.", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Der freie Cashflow der letzten zwölf Monate lag bei minus 42,4 Mrd. US-Dollar, laut Amazon vor allem wegen KI-Investitionen.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "Das Management stellt für AWS Wachstumsraten von über 40 % in 2027 und 2028 in Aussicht.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 2026", "publisher": "Amazon Investor Relations", "published": "2026-10-29", "url": "https://ir.aboutamazon.com/news-release/news-release-details/2026/Amazon-com-Announces-Third-Quarter-Results/"}
+      ]
+    },
+    {
+      "name": "Meta Platforms",
+      "symbols": ["META"],
+      "isins": ["US30303M1027"],
+      "theme": "KI für Werbung und eigene Modelle",
+      "reviewed_at": "2026-11-05",
+      "summary": "Meta setzt KI vor allem ein, um Inhalte und Werbung treffender auszuspielen. Dafür investiert der Konzern sehr viel Geld. Offen ist, ob die Erlöse schneller steigen als die Kosten.",
+      "opportunity": {"level": "high", "text": "Bessere Empfehlungen und Werbeausspielung durch KI können Engagement und Werbeerlöse steigern.", "source_ids": ["results"]},
+      "risk": {"level": "high", "text": "Sehr hohe Investitionen und ein ungewisser Ertrag eigener Spitzenmodelle könnten die Marge dauerhaft drücken.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: KI stützt das Werbewachstum; Investitionen und Kosten steigen weiter deutlich.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob eigene Modelle und Assistenten neue Erlösquellen jenseits der Werbung schaffen.",
+      "uncertainty": "Der Beitrag der KI zum Werbewachstum ist eine Einschätzung des Unternehmens und wird nicht separat beziffert.",
+      "dimensions": [
+        {"key": "cost", "text": "Weniger Personal und automatisierte Abläufe könnten Kosten senken; Rechenzentren kosten zusätzlich.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Treffendere Werbung kann Preise und Volumen je Nutzer erhöhen.", "source_ids": ["results"]},
+        {"key": "business", "text": "KI-generierte Inhalte und Assistenten könnten verändern, wie Menschen die Apps nutzen.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Die sehr große Nutzerbasis liefert Daten und Reichweite für neue KI-Funktionen.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Investitionen in Modelle und Rechenzentren müssen sich in messbaren Erlösen niederschlagen.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "Werbeerlöse", "text": "Wächst der Umsatz weiter deutlich schneller als der Werbemarkt?"},
+        {"label": "Marge", "text": "Wie stark sinkt die operative Marge durch steigende Abschreibungen?", "metric": "operating_margin"},
+        {"label": "Investitionen und Cashflow", "text": "Reicht der operative Mittelzufluss, um die Investitionen zu decken?", "metric": "fcf_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Meta meldet für Q3 2026 einen Umsatz von 64,6 Mrd. US-Dollar (+26 %) und Investitionen von 34,9 Mrd. US-Dollar im Quartal.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "Meta erwartet für 2026 Investitionen von 135–145 Mrd. US-Dollar und kündigt für 2027 weiter hohe KI-Investitionen an.", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Die operative Marge lag bei 20 % nach 40 % im Vorjahr; darin enthalten ist eine Rechtsbelastung von 9,9 Mrd. US-Dollar.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 2026 (PDF)", "publisher": "Meta Investor Relations", "published": "2026-10-21", "url": "https://s21.q4cdn.com/399680738/files/doc_news/Meta-Reports-Third-Quarter-2026-Results-2026.pdf"}
+      ]
+    },
+    {
+      "name": "ASML",
+      "symbols": ["ASML.AS", "ASML"],
+      "isins": ["NL0010273215", "USN070592100"],
+      "theme": "Lithografie für KI-Chips",
+      "reviewed_at": "2026-11-05",
+      "summary": "ASML liefert die Belichtungsmaschinen, ohne die moderne KI-Chips nicht hergestellt werden können. Die Nachfrage hängt davon ab, wie lange Chipkunden ihre Kapazitäten für KI ausbauen.",
+      "opportunity": {"level": "high", "text": "Der Ausbau der Chipfertigung für KI erhöht die Nachfrage nach Lithografiesystemen über die geplante Lieferfähigkeit hinaus.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Ein Ende des KI-Investitionszyklus, Auftragsverschiebungen oder Exportbeschränkungen könnten Umsatz und Auslastung belasten.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: Hohe Nachfrage trifft auf begrenzte Kapazität; ASML baut die Fertigung aus.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob die Chiphersteller ihre KI-Ausbaupläne beibehalten, wenn neue Kapazität bereitsteht.",
+      "uncertainty": "Die Nachfrageprognosen der Kunden beruhen laut ASML vor allem auf deren Annahmen über Umfang und Dauer der KI-Investitionen.",
+      "dimensions": [
+        {"key": "cost", "text": "KI könnte Entwicklung und Fertigung unterstützen; wesentlich ist hier der Verkauf von Maschinen an Chiphersteller.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Mehr KI-Chips erfordern mehr Belichtungskapazität und Service an installierten Anlagen.", "source_ids": ["results"]},
+        {"key": "business", "text": "Der Engpass verschiebt sich zur Lieferfähigkeit; ASML muss Kapazität rechtzeitig ausbauen.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Eine nahezu konkurrenzlose Stellung bei EUV-Systemen erschwert den Wechsel zu anderen Anbietern.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Ausbau der Fertigung und Lieferketten muss ohne Qualitätsverluste gelingen.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "Auftragslage", "text": "Steigt der Auftragsbestand weiter, und bestellen Kunden schon für 2029 und 2030?"},
+        {"label": "Kapazitätsausbau", "text": "Gelingt der geplante Ausbau der Fertigung ohne Lieferverzögerungen?"},
+        {"label": "Marge", "text": "Hält die Bruttomarge bei steigenden Stückzahlen?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "ASML meldet für Q3 2026 einen Nettoumsatz von 11,7 Mrd. Euro und eine Bruttomarge von 57,5 %.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "ASML erwartet für 2026 einen Umsatz von 44–45 Mrd. Euro und rechnet damit, dass die geplante Lieferfähigkeit für 2027 und 2028 die Kundennachfrage nicht vollständig decken wird.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 2026", "publisher": "ASML Investor Relations", "published": "2026-10-14", "url": "https://investor.asml.com/news-releases/news-release-details/asml-reports-eu11.7-billion-total-net-sales-and-eu5.0-billion-net-income-q3-2026"}
+      ]
+    },
+    {
+      "name": "Infineon",
+      "symbols": ["IFX.DE"],
+      "isins": ["DE0006231004"],
+      "theme": "Stromversorgung für KI-Rechenzentren",
+      "reviewed_at": "2026-11-05",
+      "summary": "Infineon liefert Leistungshalbleiter, die KI-Rechenzentren mit Strom versorgen. Dieses Geschäft wächst stark, während das größere Autogeschäft nur langsam wächst.",
+      "opportunity": {"level": "high", "text": "Die hohe Nachfrage nach Stromversorgung für KI-Rechenzentren bringt Wachstum und mehrjährige Kapazitätsvereinbarungen.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Schwache Nachfrage in der Elektromobilität und eine mögliche Abkühlung bei KI-Investitionen könnten das Wachstum bremsen.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: Das KI-Geschäft treibt Umsatz und Marge; das Autogeschäft wächst langsamer als der Konzern.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob aus Kapazitätsreservierungen dauerhafte Erlöse werden und Infineon gegen Wettbewerber bestehen kann.",
+      "uncertainty": "Infineon weist keinen separaten KI-Umsatz aus; die Kapazitätsvereinbarungen sind teilweise noch in Verhandlung.",
+      "dimensions": [
+        {"key": "cost", "text": "KI könnte Entwicklung und Fertigung effizienter machen; wesentlich ist hier der Verkauf von Chips für Rechenzentren.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Höherer Strombedarf von KI-Servern erhöht die Nachfrage nach Leistungshalbleitern.", "source_ids": ["results"]},
+        {"key": "business", "text": "Der Schwerpunkt könnte sich vom Autogeschäft stärker zu Rechenzentren verschieben.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Erfahrung bei Leistungshalbleitern und eigene Fertigung könnten Vorteile bieten.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Kapazitäten müssen rechtzeitig und wirtschaftlich ausgebaut werden.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "KI-Umsatz", "text": "Werden Erlöse aus dem Rechenzentrumsgeschäft künftig separat ausgewiesen?"},
+        {"label": "Autogeschäft", "text": "Erholt sich die Nachfrage in der Elektromobilität?"},
+        {"label": "Marge", "text": "Erreicht die Segmentergebnis-Marge die angekündigten Werte?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Infineon meldet für Q3 GJ 2026 einen Rekordumsatz von 4,172 Mrd. Euro und eine Segmentergebnis-Marge von 19,1 %.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "Abgeschlossene oder verhandelte mehrjährige Kapazitätsvereinbarungen mit KI-Kunden umfassen laut Infineon ein kumuliertes Umsatzvolumen im hohen einstelligen Milliarden-Euro-Bereich.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 GJ 2026", "publisher": "Infineon über EQS-News (Deutsche Börse)", "published": "2026-08-05", "url": "https://live.deutsche-boerse.com/news/EQS-News-Infineon-Technolgies-AG-Q3-FY-2026-concluded-with-record-sales-driven-by-strong-AI-business-further-significant-increase-in-revenue-and-margin-expected-in-Q4-FY-2026-5fd33ab1-1e11-4cd8-a8a6-8e06fb98cb0e"}
+      ]
+    },
+    {
+      "name": "Allianz",
+      "symbols": ["ALV.DE"],
+      "isins": ["DE0008404005"],
+      "theme": "KI in Schadenbearbeitung und Verwaltung",
+      "reviewed_at": "2026-11-05",
+      "summary": "Für Allianz ist KI vor allem ein Werkzeug, um Schäden schneller zu bearbeiten und Verwaltungskosten zu senken. Neue KI-bezogene Haftungsrisiken der Kunden könnten zugleich Geschäft und Schäden bringen.",
+      "opportunity": {"level": "medium", "text": "KI-Agenten in der Schadenbearbeitung könnten Abläufe beschleunigen und die Kostenquote senken.", "source_ids": ["partner", "results"]},
+      "risk": {"level": "low", "text": "Fehlerhafte automatisierte Entscheidungen und Regulierung könnten Aufwand und Reputationsrisiken erhöhen.", "source_ids": ["partner"]},
+      "short_term": "0–2 Jahre: Pilotanwendungen in Kfz- und Krankenversicherung; Produktivitätsgewinne sind erst teilweise sichtbar.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob Automatisierung die Kostenquote dauerhaft senkt, ohne die Kundenzufriedenheit zu gefährden.",
+      "uncertainty": "Allianz nennt für die KI-Partnerschaft keine konkreten Ziele oder Einsparungen; die bessere Kostenquote hat mehrere Ursachen.",
+      "dimensions": [
+        {"key": "cost", "text": "Automatisierte Schadenaufnahme und -bearbeitung könnten Personal- und Verwaltungskosten senken.", "source_ids": ["partner", "results"]},
+        {"key": "revenue", "text": "Schnellere Regulierung und bessere Risikoeinschätzung könnten Kunden binden; direkte KI-Erlöse sind nicht absehbar.", "source_ids": ["partner", "results"]},
+        {"key": "business", "text": "Komplexe und sensible Fälle bleiben laut Allianz bei Mitarbeitern; das Geschäftsmodell ändert sich daher eher schrittweise.", "source_ids": ["partner", "results"]},
+        {"key": "moat", "text": "Größe und Datenbestände könnten beim Einsatz von KI helfen; die Technik selbst ist für Wettbewerber ebenfalls verfügbar.", "source_ids": ["partner", "results"]},
+        {"key": "execution", "text": "Nachvollziehbare und regelkonforme KI-Entscheidungen sind Voraussetzung für den breiten Einsatz.", "source_ids": ["partner", "results"]}
+      ],
+      "watch": [
+        {"label": "Kostenquote", "text": "Sinkt die Kostenquote in der Schaden- und Unfallversicherung weiter?"},
+        {"label": "Schadenbearbeitung", "text": "Werden Geschwindigkeit oder Automatisierungsgrad der Regulierung messbar ausgewiesen?"},
+        {"label": "Marge", "text": "Schlagen Produktivitätsgewinne im operativen Ergebnis durch?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "announced", "text": "Allianz und Anthropic entwickeln KI-Agenten für mehrstufige Abläufe von der Schadenaufnahme bis zur Bearbeitung in der Kfz- und Krankenversicherung; komplexe Fälle bleiben bei Mitarbeitern.", "source_ids": ["partner"]},
+        {"kind": "reported", "text": "Allianz meldet für das erste Halbjahr 2026 ein operatives Rekordergebnis von 9,39 Mrd. Euro und eine um 0,3 Prozentpunkte gesunkene Kostenquote von 23,7 % in der Schaden- und Unfallversicherung.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "partner", "title": "Partnerschaft mit Anthropic", "publisher": "Allianz Media Center", "published": "2026-01-09", "url": "https://www.allianz.com/en/mediacenter/news/media-releases/260109-allianz-and-anthropic-forge-global-partnership.html"},
+        {"id": "results", "title": "Ergebnisse 2Q 2026", "publisher": "Allianz Media Center", "published": "2026-08-07", "url": "https://www.allianz.com/en/mediacenter/news/media-releases/financials/260807-2q-2026-earnings-release.html"}
+      ]
+    },
+    {
+      "name": "Salesforce",
+      "symbols": ["CRM"],
+      "isins": ["US79466L3024"],
+      "theme": "KI-Agenten in Unternehmenssoftware",
+      "reviewed_at": "2026-11-05",
+      "summary": "Salesforce verkauft KI-Agenten, die Aufgaben in Vertrieb und Kundenservice übernehmen. Das Geschäft wächst schnell, ist aber noch klein. Wenn Agenten Arbeit ersetzen, könnte das klassische Modell mit Preisen je Benutzer unter Druck geraten.",
+      "opportunity": {"level": "high", "text": "Agentenprodukte und Datenplattform wachsen sehr schnell und erschließen zusätzliche Erlöse bei Bestandskunden.", "source_ids": ["results"]},
+      "risk": {"level": "high", "text": "Weniger menschliche Nutzer bei Kunden könnten nutzerbasierte Lizenzerlöse verringern; neue Preismodelle sind noch unerprobt.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: Agentenerlöse wachsen stark, machen aber nur einen kleinen Teil des Gesamtumsatzes aus.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob Erlöse aus Agenten wegfallende Benutzerlizenzen mehr als ausgleichen.",
+      "uncertainty": "Der jährlich wiederkehrende Umsatz aus Agentenprodukten umfasst inzwischen mehrere Angebote und ist eine eigene Kennzahl des Unternehmens.",
+      "dimensions": [
+        {"key": "cost", "text": "Eigene Automatisierung in Vertrieb und Support könnte Kosten senken; KI-Betrieb kostet Rechenleistung.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Agenten und Datenprodukte könnten zusätzlich zu bestehenden Lizenzen verkauft werden.", "source_ids": ["results"]},
+        {"key": "business", "text": "Wenn Agenten Arbeit übernehmen, braucht es weniger Benutzerzugänge; die Abrechnung könnte sich zu Nutzung oder Ergebnis verschieben.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Kundendaten und Einbindung in Vertriebs- und Serviceprozesse könnten einen Anbieterwechsel erschweren.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Agenten müssen verlässlich arbeiten, damit Kunden sie breit einsetzen.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "Agenten-Erlöse", "text": "Wächst der wiederkehrende Umsatz mit Agenten weiter deutlich?"},
+        {"label": "Preismodell", "text": "Gleichen nutzungsabhängige Preise sinkende Benutzerzahlen aus?"},
+        {"label": "Marge", "text": "Bleibt die operative Marge trotz KI-Kosten und Übernahmen stabil?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Salesforce meldet für Q2 GJ 2027 einen jährlich wiederkehrenden Umsatz von knapp 3,9 Mrd. US-Dollar mit Agentforce und Data 360 (+über 210 %), davon über 1,5 Mrd. US-Dollar mit Agentforce.", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Der Gesamtumsatz stieg um 11 % auf 11,3 Mrd. US-Dollar, einschließlich 456 Mio. US-Dollar aus der Übernahme von Informatica.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q2 GJ 2027", "publisher": "Salesforce Investor Relations", "published": "2026-08-26", "url": "https://investor.salesforce.com/news/news-details/2026/Salesforce-Delivers-Record-Second-Quarter-Fiscal-2027-Results/default.aspx"}
       ]
     }
   ]
