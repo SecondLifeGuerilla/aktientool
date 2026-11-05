@@ -1517,7 +1517,7 @@ function notes(p) {
     <h2>Meine Notizen zur ${esc(p.name)} Aktie</h2>
     <div class="card" style="margin-top:12px">
       <p class="muted" style="font-size:13px;margin:0 0 8px">Ihre Investment-These: Warum kaufen? Was müsste passieren, damit Sie verkaufen?
-        Die Notizen bleiben lokal auf Ihrem Rechner (data/notizen.json).</p>
+        Die Notizen bleiben in diesem Browser (sichern unter <a href="#/daten">Meine Daten</a>).</p>
       <div class="field"><textarea id="note-text" rows="5" aria-label="Notizen"></textarea></div>
       <div class="toolbar" style="margin:8px 0 0"><button class="btn primary" id="note-save" type="button">Notiz speichern</button>
         <span class="muted" id="note-status" style="font-size:13px"></span></div>

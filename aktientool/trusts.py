@@ -128,6 +128,8 @@ def _run() -> None:
 
 
 def refresh_if_stale() -> bool:
+    if config.SERVERLESS:
+        return False  # serverlos lädt der tägliche Workflow die Fonds (scripts/daten.py)
     age = cache_age(FUNDS_KEY)
     # fehlten beim letzten Lauf die AIC-Daten (Seite nicht erreichbar), nach einer Stunde erneut versuchen
     incomplete = age is not None and age > 3600 and not (peek(FUNDS_KEY) or {}).get("aic_date")
@@ -139,6 +141,25 @@ def refresh_if_stale() -> bool:
         _state["running"] = True
     threading.Thread(target=_run, name="trusts-fonds", daemon=True).start()
     return True
+
+
+def refresh_now() -> None:
+    """Fonds sofort (im laufenden Thread) neu laden, wenn sie veraltet sind; für den täglichen Workflow."""
+    age = cache_age(FUNDS_KEY)
+    incomplete = age is not None and age > 3600 and not (peek(FUNDS_KEY) or {}).get("aic_date")
+    if age is None or age >= config.TTL_TRUSTS or incomplete:
+        with _lock:
+            _state["running"] = True
+        _run()
+
+
+def warm_now() -> None:
+    """Positionen und Verlauf der handelbaren Fonds vorladen (im laufenden Thread); für den täglichen Workflow."""
+    rows = fund_rows()
+    if rows:
+        with _lock:
+            _state["warming"] = True
+        _warm(rows)
 
 
 # ---------------------------------------------------------------- Positionen der Fonds
@@ -194,6 +215,8 @@ def _warm(rows: list[dict]) -> None:
 
 
 def _start_warm(rows: list[dict]) -> None:
+    if config.SERVERLESS:
+        return
     today = time.strftime("%Y-%m-%d")
     with _lock:
         if _state["warming"] or _state["warmed"] == today:
@@ -461,8 +484,8 @@ def _record(rows: list[dict]) -> None:
     """Den heute berechneten Abschlag jeder Holding festhalten (der letzte Wert des Tages bleibt stehen). So entsteht
     ein Verlauf mit der jeweils gültigen Zusammensetzung, auch wenn die Angaben später an neue Berichte angepasst werden."""
     today = dt.date.today()
-    if today.weekday() >= 5:
-        return
+    if today.weekday() >= 5 or config.SERVERLESS:
+        return  # serverlos hält der tägliche Workflow die Abschläge fest
     day = today.isoformat()
     with _record_lock:
         data = _recorded()

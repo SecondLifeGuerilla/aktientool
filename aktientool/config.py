@@ -4,20 +4,19 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.environ.get("AKTIENTOOL_DATA_DIR", BASE_DIR / "data"))
+
+# Serverlos (Vercel): kein dauerhafter Speicher und keine Hintergrund-Threads. Weltauswahl, Tiefenanalyse,
+# Handelsliste, Fonds und Tagesstände baut dann ein täglicher GitHub-Workflow (scripts/daten.py) und legt sie auf den
+# Branch „data“; der Server lädt sie von dort (remote.py). Eigene Eingaben (Depot, Watchlist, Notizen, Alarme …)
+# speichert in beiden Betriebsarten der Browser (static/js/store.js), der Server merkt sich nichts über Nutzer.
+SERVERLESS = bool(os.environ.get("VERCEL")) or os.environ.get("AKTIENTOOL_SERVERLESS", "0") == "1"
+DATA_DIR = Path(os.environ.get("AKTIENTOOL_DATA_DIR", "/tmp/aktientool" if SERVERLESS else BASE_DIR / "data"))
 CACHE_DIR = DATA_DIR / "cache"
 STATIC_DIR = BASE_DIR / "static"
-WATCHLIST_FILE = DATA_DIR / "watchlist.json"
-WATCH_GROUPS_FILE = DATA_DIR / "watchgruppen.json"  # Gruppen und Untergruppen der Watchlist
 PRESETS_FILE = BASE_DIR / "aktientool" / "presets.json"
 THEMES_FILE = BASE_DIR / "aktientool" / "themes.json"
 WITHHOLDING_FILE = BASE_DIR / "aktientool" / "quellensteuer.json"
-DEPOT_FILE = DATA_DIR / "depot.json"
-NOTES_FILE = DATA_DIR / "notizen.json"
-ALERTS_FILE = DATA_DIR / "alarme.json"
-TRADABLE_FILE = DATA_DIR / "handelbar.json"  # eigene Korrekturen: bei Trade Republic doch (nicht) handelbar
 HOLDINGS_FILE = BASE_DIR / "aktientool" / "holdings.json"  # Holdings mit selbst gerechnetem inneren Wert
-USER_HOLDINGS_FILE = DATA_DIR / "holdings.json"  # eigene Holdings und Änderungen daran (gehen vor)
 SNAPSHOT_DIR = Path(os.environ.get("AKTIENTOOL_SNAPSHOT_DIR", DATA_DIR / "snapshots"))
 DEEP_KEY = "tiefenanalyse"
 
@@ -55,7 +54,9 @@ DEEP_AUTO = os.environ.get("AKTIENTOOL_TIEFE_AUTO", "1") != "0"
 DEEP_DELAY = float(os.environ.get("AKTIENTOOL_TIEFE_PAUSE", 1.5))
 TTL_DEEP = int(os.environ.get("AKTIENTOOL_TTL_TIEFE", 7 * 24 * 3600))
 
-# Alarme: Prüfabstand in Sekunden, Mitteilung in macOS, optional E-Mail über einen eigenen SMTP-Zugang
-ALERT_INTERVAL = int(os.environ.get("AKTIENTOOL_ALARM_INTERVALL", 1800))
-ALERT_NOTIFY = os.environ.get("AKTIENTOOL_MITTEILUNG", "1") != "0"
-SMTP = {k: os.environ.get(f"AKTIENTOOL_SMTP_{k.upper()}") for k in ("host", "port", "user", "password", "to")}
+# Vorberechnete Daten (nur serverlos): Basis-URL des Branches „data“. Standard ist das GitHub-Repo, aus dem Vercel
+# gebaut hat (VERCEL_GIT_REPO_OWNER/SLUG), sonst SecondLifeGuerilla/aktientool.
+_REPO = (f"{os.environ['VERCEL_GIT_REPO_OWNER']}/{os.environ['VERCEL_GIT_REPO_SLUG']}"
+         if os.environ.get("VERCEL_GIT_REPO_OWNER") and os.environ.get("VERCEL_GIT_REPO_SLUG") else "SecondLifeGuerilla/aktientool")
+DATA_URL = os.environ.get("AKTIENTOOL_DATA_URL", f"https://raw.githubusercontent.com/{_REPO}/data").rstrip("/")
+DATA_CHECK_EVERY = int(os.environ.get("AKTIENTOOL_DATA_PRUEFEN", 10 * 60))  # so oft nach neuen Daten sehen

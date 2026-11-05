@@ -1,9 +1,39 @@
 # Aktientool
 
-Lokales Analyse-Tool für Aktien nach dem Vorbild des [Aktienfinders](https://aktienfinder.net). Es läuft auf dem
-eigenen Rechner im Browser und nutzt ausschließlich kostenlose Datenquellen ohne API-Key.
+Analyse-Tool für Aktien nach dem Vorbild des [Aktienfinders](https://aktienfinder.net). Es läuft im Browser – online
+auf Vercel oder auf dem eigenen Rechner – und nutzt ausschließlich kostenlose Datenquellen ohne API-Key.
 
-## Starten
+**Eigene Eingaben bleiben im Browser.** Watchlist, Gruppen, Depot, Notizen, Alarme, Korrekturen zur Handelbarkeit und
+eigene Holdings speichert jeder Browser für sich (localStorage), ohne Konto; der Server merkt sich nichts über Nutzer.
+Unter „Mehr → Meine Daten“ lassen sie sich als JSON-Datei sichern, auf ein anderes Gerät übertragen und löschen. Dort lassen
+sich auch die Dateien aus dem Ordner `data/` der früheren lokalen Fassung (depot.json, watchlist.json …) importieren.
+
+## Online auf Vercel
+
+Die serverlose Fassung besteht aus drei Teilen:
+
+- **Oberfläche** (`static/`): liefert Vercel als statische Dateien aus (`vercel.json`).
+- **API** (`api/index.py` → `aktientool/server.py`): eine Python-Funktion für alle Anfragen an `/api/…`. Kurse, Profile,
+  Nachrichten und Hebelprodukte holt sie live; zwischengespeichert wird nur kurz in `/tmp`.
+- **Tägliche Daten** (`.github/workflows/daten.yml` → `scripts/daten.py`): Weltauswahl, Tiefenanalyse, Handelsliste der
+  LS Exchange, Closed-End-Fonds und Tagesstände brauchen Minuten bis Stunden und laufen deshalb jede Nacht als GitHub-Workflow.
+  Das Ergebnis liegt auf dem Branch `data` (ohne Verlauf, wird jedes Mal ersetzt); die API lädt es von dort
+  (`aktientool/remote.py`, höchstens alle 10 Minuten eine kurze Prüfung). Die Tiefenanalyse läuft je Nacht bis zu
+  4,5 Stunden und setzt in der nächsten Nacht fort; nach einigen Tagen ist die ganze Weltauswahl analysiert.
+
+Einrichten:
+
+1. Repo bei Vercel importieren (Framework „Other“, keine Build-Einstellungen nötig; `vercel.json` regelt alles).
+2. Unter GitHub → Actions den Workflow „Daten aktualisieren“ einmal von Hand starten („Run workflow“). Nach rund
+   10 Minuten steht der Zwischenstand (Weltauswahl, Handelsliste, Fonds) auf dem Branch `data`, danach läuft er jede Nacht.
+3. Optional in Vercel: `AKTIENTOOL_SEC_USER_AGENT` mit eigener Kontaktadresse (verlangt die SEC) und
+   `AKTIENTOOL_DATA_URL`, falls die Daten aus einem anderen Repo kommen sollen.
+
+Hinweise: GitHub pausiert geplante Workflows in Repos ohne Aktivität nach 60 Tagen (dann in Actions wieder aktivieren).
+Alarme prüft der Browser alle 30 Minuten, solange das Tool in einem Tab offen ist (auf Wunsch mit Mitteilung des Browsers);
+E-Mail und macOS-Mitteilungen gibt es nicht mehr. Yahoo kann Anfragen aus Rechenzentren zeitweise drosseln.
+
+## Lokal starten
 
 ```bash
 .venv/bin/python -m pip install -r requirements.txt   # einmalig
@@ -148,13 +178,13 @@ nach Depotwert gewichtete Scores. Unter „Alle Käufe“ lässt sich jeder Kauf
 („Rückgängig“ über `POST /api/depot/restore`, mit derselben Kennung) und die Liste als CSV sichern. „Käufe aus einer Tabelle
 übernehmen“ liest eingefügte Excel-Zeilen oder eine CSV-Datei (Ticker; Stück; Kaufkurs; Datum; Notiz, Kopfzeile optional,
 Datum als TT.MM.JJJJ oder JJJJ-MM-TT), zeigt vorab erkannte Käufe und Fehler je Zeile und speichert alles oder nichts
-(`POST /api/depot/import`). Gespeichert in `data/depot.json`.
+und speichert alles oder nichts. Gespeichert im Browser.
 
 **Alarme** (`#/alarme`): Kurs fällt unter / steigt über eine Schwelle (in Euro; ältere Alarme ohne Feld `currency` in der
 Kurswährung), Kurs mindestens x % unter dem fairen Wert,
-Dividende gekürzt, Gesamt-Score fällt unter eine Schwelle. Geprüft wird alle 30 Minuten, solange der Server läuft
-(„Jetzt prüfen“ sofort). Ausgelöste Alarme erscheinen als Zahl in der Kopfzeile und als macOS-Mitteilung, auf Wunsch
-auch per E-Mail (siehe Einstellungen). Gespeichert in `data/alarme.json`.
+Dividende gekürzt, Gesamt-Score fällt unter eine Schwelle. Geprüft wird alle 30 Minuten, solange das Tool im Browser
+geöffnet ist („Jetzt prüfen“ sofort; der Browser schickt die offenen Alarme an `POST /api/alerts/check`). Ausgelöste Alarme
+erscheinen als Zahl in der Kopfzeile und, falls erlaubt, als Mitteilung des Browsers. Gespeichert im Browser.
 
 **Termine** (`#/termine`): Quartalszahlen, Ex-Tage und Zahltage aller Aktien aus Watchlist und Depot, mit erwarteter
 Dividende je Aktie und der Revision der Gewinnschätzung vor den Zahlen.
@@ -257,7 +287,7 @@ Abschlag (oder Aufschlag) zum inneren Wert (NAV). Zwei Tabellen:
   Meldet ein Bericht nur Werte statt Stückzahlen (oder mehrere Aktiengattungen zusammen), rechnet das Tool die
   Stückzahl über den Kurs am Stichtag zurück. Die Angaben stehen in [`aktientool/holdings.json`](aktientool/holdings.json)
   mit Quelle und Stichtag. **Sie aktualisieren sich nicht von selbst** (keine kostenlose Schnittstelle): Nach einem neuen
-  Bericht über „Angaben ändern“ die Stückzahlen, Schulden und übrigen Posten eintragen (landet in `data/holdings.json` und
+  Bericht über „Angaben ändern“ die Stückzahlen, Schulden und übrigen Posten eintragen (landet im Browser und
   geht vor; „Eigene Änderungen verwerfen“ stellt die mitgelieferten Werte wieder her). Der Stichtag ist gelb, wenn der
   Bericht älter als drei Monate ist, rot ab einem halben Jahr.
 - **Fonds & Trusts weltweit**: rund 770 Closed-End-Fonds aus London, New York, Zürich, Sydney, Toronto, Amsterdam,
@@ -283,7 +313,7 @@ der Angaben erhalten.
 Ein Kasten oben auf der Seite zeigt, wie aktuell die Daten sind (Ampelfarben). Im Aktienprofil eines Trusts oder einer
 Holding steht die Karte „Innerer Wert“ vor „Auf einen Blick“, weil KGV und fairer Wert bei solchen Firmen wenig aussagen.
 
-**Notizen**: Am Ende jedes Profils lässt sich eine Investment-These festhalten (`data/notizen.json`).
+**Notizen**: Am Ende jedes Profils lässt sich eine Investment-These festhalten (im Browser).
 
 **Anlagethemen** wie KI oder Robotik gibt es weder bei Yahoo noch in den Branchen-Klassifikationen. Die Zuordnung steht
 in [`aktientool/themes.json`](aktientool/themes.json): eine redaktionelle Liste von Tickern je Thema, ergänzt um passende
@@ -296,8 +326,7 @@ Wikipedia-Zusammenfassung nachladen. Die Texte stehen in [`static/js/glossary.js
 
 **Screener und Watchlist**: Kennzahlen für ganze Listen laden (DAX 40, Dow Jones 30, Qualitäts-Klassiker,
 Watchlist oder eigene Tickerliste), filtern und nach Spalten bzw. Score sortieren. Die Vorlagen stehen in
-[`aktientool/presets.json`](aktientool/presets.json) und lassen sich frei bearbeiten. Die Watchlist liegt in
-`data/watchlist.json`.
+[`aktientool/presets.json`](aktientool/presets.json) und lassen sich frei bearbeiten. Die Watchlist liegt im Browser.
 
 ## Datenquellen und Grenzen
 
@@ -340,7 +369,7 @@ Watchlist oder eigene Tickerliste), filtern und nach Spalten bzw. Score sortiere
   Firma: TSMC, Samsung oder SK hynix gibt es dort nur als ADR/GDR, chinesische Firmen oft nur als H-Aktie; das Profil
   nennt dann die ISIN, unter der die App die Aktie führt. Fehlt bei Yahoo die ISIN einer Notierung (z. B. BYD in
   Hongkong) oder ist sie falsch, stimmt die Angabe nicht; im Profil lässt sie sich mit einem Klick korrigieren
-  (`data/handelbar.json`). Von gut 5.950 Aktien der Weltauswahl sind rund 3.460 handelbar; fast nichts gibt es aus
+  (im Browser). Von gut 5.950 Aktien der Weltauswahl sind rund 3.460 handelbar; fast nichts gibt es aus
   Korea, Taiwan, Indien, Saudi-Arabien, Malaysia und Vietnam.
 
 - **Wichtigste Einschränkung:** Für Firmen ohne SEC- oder ESEF-Berichte (die meisten DAX-Werte, z. B. Allianz, BASF,
@@ -399,30 +428,35 @@ Die Werte weichen von denen des Aktienfinders ab, der kostenpflichtige Daten (Fa
 | `AKTIENTOOL_PORT` | `5050` | Port des lokalen Servers |
 | `AKTIENTOOL_SEC_USER_AGENT` | `Aktientool lokal aktientool@example.com` | Die SEC verlangt einen User-Agent mit Kontaktadresse; bitte eigene E-Mail eintragen |
 | `AKTIENTOOL_TTL_YAHOO` | `21600` | Cache-Dauer der Yahoo-Daten in Sekunden |
-| `AKTIENTOOL_DATA_DIR` | `./data` | Ort für Cache und Watchlist |
+| `AKTIENTOOL_DATA_DIR` | `./data` (serverlos `/tmp/aktientool`) | Ort für den Cache |
 | `AKTIENTOOL_WELT_MIN_CAP` | `2e9` | Mindest-Börsenwert in Euro für die Weltauswahl (`2e9` ≈ 6.000 Aktien, `5e9` ≈ 3.200, `1e10` ≈ 1.900; kleinere Werte machen die Liste größer und den Aufbau langsamer) |
 | `AKTIENTOOL_TTL_WELT` | `86400` | Cache-Dauer der Weltauswahl in Sekunden |
 | `AKTIENTOOL_TIEFE_AUTO` | `1` | Tiefenanalyse automatisch starten (`0` = nur per Schaltfläche in der Weltauswahl) |
 | `AKTIENTOOL_TIEFE_PAUSE` | `1.5` | Pause zwischen zwei Aktien der Tiefenanalyse in Sekunden (kleiner = schneller, aber eher gedrosselt) |
 | `AKTIENTOOL_TTL_TIEFE` | `604800` | Gültigkeit eines Ergebnisses der Tiefenanalyse in Sekunden |
 | `AKTIENTOOL_SNAPSHOT_DIR` | `./data/snapshots` | Ort der Tagesstände für den Score-Check |
-| `AKTIENTOOL_ALARM_INTERVALL` | `1800` | Prüfabstand der Alarme in Sekunden |
-| `AKTIENTOOL_MITTEILUNG` | `1` | macOS-Mitteilung bei ausgelösten Alarmen (`0` = aus) |
-| `AKTIENTOOL_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_TO` | – | Optional: Alarme zusätzlich per E-Mail über den eigenen SMTP-Zugang (STARTTLS, Port 587) |
+| `AKTIENTOOL_SERVERLESS` | `0` (auf Vercel `1`) | Serverlos: keine Hintergrund-Läufe, Daten vom Branch `data` |
+| `AKTIENTOOL_DATA_URL` | `https://raw.githubusercontent.com/<Repo>/data` | Woher die serverlose Fassung die täglichen Daten lädt |
+| `AKTIENTOOL_DATA_PRUEFEN` | `600` | So oft (Sekunden) sieht die serverlose Fassung nach neuen Daten |
 
 ## Aufbau
 
 ```
-run.py                     Start
+run.py                     Start (lokal)
+api/index.py               Einstieg für Vercel (serverlos)
+vercel.json                Vercel: statische Oberfläche aus static/, /api/… an die Python-Funktion
+scripts/daten.py           täglicher Daten-Workflow (Weltauswahl, Tiefenanalyse, Handelsliste, Fonds, Tagesstände)
+.github/workflows/daten.yml  startet ihn jede Nacht und legt das Ergebnis auf den Branch data
 aktientool/
-  server.py                Flask: Oberfläche + JSON-API (Profil, Weltauswahl, Depot, Notizen, Alarme, Kurse, Wechselkurse,
-                           Tiefenanalyse, Tagesstände, Nachrichten, Lexikon)
+  server.py                Flask: Oberfläche + JSON-API (Profil, Weltauswahl, Kurse, Wechselkurse, Alarmprüfung,
+                           Tiefenanalyse, Tagesstände, Nachrichten, Lexikon); Kontext aus dem Browser (Korrekturen, Holdings)
+  remote.py                serverlos: tägliche Daten vom Branch data laden und entpacken
   service.py               setzt alle Quellen zu einem Profil zusammen
   world.py                 Weltauswahl: Börsen laden, Notierungen zusammenführen, Land bestimmen, Aufbau im Hintergrund
   deep.py                  Tiefenanalyse der Weltauswahl im Hintergrund (fortsetzbar)
   snapshots.py             Tagesstände der Weltauswahl und Score-Check
-  alerts.py                Alarme prüfen (Hintergrund), macOS-Mitteilung, E-Mail
-  userdata.py              Depot, Notizen, Alarme, Korrekturen zur Handelbarkeit und eigene Holdings als JSON-Dateien
+  alerts.py                Alarme prüfen (die Alarme schickt der Browser mit)
+  userdata.py              Kontext der Anfrage: Korrekturen zur Handelbarkeit und eigene Holdings (prüft sie)
   trusts.py                Trusts & Holdings: Fondsliste im Hintergrund, innerer Wert der Holdings, Positionen
   holdings.json            Holdings mit Beteiligungen laut letztem Bericht (Quelle und Stichtag je Eintrag)
   names.py                 deutsche Namen für Sektoren, Branchen, Länder und Kontinente
@@ -445,7 +479,7 @@ aktientool/
   analysis/                Kennzahlen, Bewertung (inkl. normalisiertem Gewinn, KUV, erwarteter Rendite), Reverse-DCF,
                            ROIC/Piotroski/Rückkäufe/Revisionen, Dividenden, Steuern, Scorecard, Fazit
 static/                    Oberfläche (HTML, CSS, JavaScript-Module); static/vendor/ enthält ECharts 5.5.1, damit
-                           Diagramme ohne CDN laden
+                           Diagramme ohne CDN laden; static/js/store.js speichert die eigenen Daten im Browser
 Aktientool.command         Start per Doppelklick (Server starten und Browser öffnen)
 tests/                     pytest, ohne Netzwerk
 ```

@@ -1,8 +1,14 @@
-"""Lokaler Webserver: liefert die Oberfläche aus und stellt die JSON-API bereit."""
+"""Webserver: liefert die Oberfläche aus und stellt die JSON-API bereit.
+
+Läuft lokal (python run.py) oder serverlos auf Vercel (api/index.py). Der Server speichert nichts über Nutzer:
+Depot, Watchlist, Notizen und Alarme liegen im Browser. Was davon in Berechnungen einfließt (Korrekturen zur
+Handelbarkeit, eigene Holdings), schickt die Oberfläche als Kontext mit (siehe ContextMiddleware).
+"""
 
 from __future__ import annotations
 
 import http.client
+import io
 import json
 import logging
 import re
@@ -14,14 +20,13 @@ from datetime import datetime, timezone
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from . import alerts, config, deep, derivate, eur, outlook, service, snapshots, trusts, userdata, world
+from . import alerts, config, deep, derivate, eur, outlook, remote, service, snapshots, trusts, userdata, world
 from .analysis import metrics
 from .cache import cached
 from .sources import fx, news, onvista, wiki, yahoo, yahoo_screener
 
 log = logging.getLogger(__name__)
 app = Flask(__name__, static_folder=None)
-_watchlist_lock = threading.Lock()
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-^=]{1,20}$")
 
 
@@ -58,6 +63,35 @@ def _unexpected(e):
     return jsonify({"error": f"{name}: {e}"}), 500
 
 
+class ContextMiddleware:
+    """GET-Anfragen mit Kontext kommen als POST mit dem Kopf „X-HTTP-Method-Override: GET“ und dem Kontext als
+    JSON im Körper (ein Kopf wäre für viele eigene Holdings zu klein). Die Middleware merkt sich den Körper und reicht
+    die Anfrage als GET weiter; userdata.context() liest ihn."""
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        if environ.get("REQUEST_METHOD") == "POST" and environ.get("HTTP_X_HTTP_METHOD_OVERRIDE", "").upper() == "GET":
+            try:
+                length = int(environ.get("CONTENT_LENGTH") or 0)
+            except ValueError:
+                length = 0
+            environ["aktientool.context"] = environ["wsgi.input"].read(min(length, userdata.MAX_CONTEXT_BYTES))
+            environ.update({"REQUEST_METHOD": "GET", "CONTENT_LENGTH": "0", "wsgi.input": io.BytesIO(b"")})
+        return self.wsgi_app(environ, start_response)
+
+
+app.wsgi_app = ContextMiddleware(app.wsgi_app)
+
+
+@app.before_request
+def _remote_data():
+    # serverlos: täglich vorberechnete Daten bei Bedarf nachladen (höchstens alle paar Minuten eine kurze Prüfung)
+    if config.SERVERLESS and request.path.startswith("/api/"):
+        remote.ensure()
+
+
 @app.after_request
 def _no_store_for_api(resp):
     # Der Server cacht selbst; der Browser soll immer den aktuellen Stand abfragen
@@ -73,18 +107,6 @@ def _symbol(raw: str) -> str:
     return sym
 
 
-def _read_watchlist() -> list[str]:
-    try:
-        return json.loads(config.WATCHLIST_FILE.read_text("utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-
-def _write_watchlist(items: list[str]) -> None:
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    config.WATCHLIST_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), "utf-8")
-
-
 @app.get("/")
 def index():
     return send_from_directory(config.STATIC_DIR, "index.html")
@@ -95,6 +117,12 @@ def static_files(path: str):
     resp = send_from_directory(config.STATIC_DIR, path)
     resp.headers["Cache-Control"] = "no-cache"
     return resp
+
+
+@app.get("/api/info")
+def api_info():
+    """Betriebsart: lokal oder serverlos (dann mit Stand der vorberechneten Daten)."""
+    return jsonify(remote.status())
 
 
 @app.get("/api/search")
@@ -188,13 +216,12 @@ def api_world_stocks():
     return jsonify({s: row for s in _symbols(request.args.get("s", ""), limit=200) if (row := world.stock(s))})
 
 
-@app.put("/api/handelbar/<symbol>")
+@app.get("/api/handelbar/<symbol>")
 def api_tradable(symbol: str):
-    """Eigene Korrektur zur Handelbarkeit bei Trade Republic: true/false, null = wieder laut Handelsliste."""
+    """Handelbarkeit bei Trade Republic laut Handelsliste, mit der eigenen Korrektur aus dem Kontext (die speichert
+    der Browser)."""
     sym = _symbol(symbol)
-    data = _body()
-    userdata.set_tradable(sym, data.get("tradable"))
-    return jsonify(world.trade_republic(sym, str(data.get("isin") or "").strip().upper() or None))
+    return jsonify(world.trade_republic(sym, request.args.get("isin", "").strip().upper() or None))
 
 
 @app.get("/api/world/status")
@@ -204,7 +231,7 @@ def api_world_status():
 
 @app.post("/api/world/refresh")
 def api_world_refresh():
-    world.start()
+    world.start()  # serverlos: tut nichts, der tägliche Workflow baut die Daten
     return jsonify(world.status(auto_refresh=False))
 
 
@@ -226,41 +253,6 @@ def api_world_data():
 def api_presets():
     data = json.loads(config.PRESETS_FILE.read_text("utf-8"))
     return jsonify(data["lists"])
-
-
-@app.get("/api/watchlist")
-def api_watchlist():
-    return jsonify(_read_watchlist())
-
-
-@app.post("/api/watchlist/<symbol>")
-def api_watchlist_add(symbol: str):
-    sym = _symbol(symbol)
-    with _watchlist_lock:
-        items = _read_watchlist()
-        if sym not in items:
-            items.append(sym)
-            _write_watchlist(items)
-    return jsonify(items)
-
-
-@app.delete("/api/watchlist/<symbol>")
-def api_watchlist_remove(symbol: str):
-    sym = _symbol(symbol)
-    with _watchlist_lock:
-        items = [s for s in _read_watchlist() if s != sym]
-        _write_watchlist(items)
-    return jsonify(items)
-
-
-@app.get("/api/watchgruppen")
-def api_watch_groups():
-    return jsonify(userdata.watch_groups())
-
-
-@app.put("/api/watchgruppen")
-def api_watch_groups_save():
-    return jsonify(userdata.save_watch_groups(_body().get("groups")))
 
 
 def _body() -> dict:
@@ -414,124 +406,47 @@ def api_trust_history(symbol: str):
     return jsonify(found)
 
 
-@app.put("/api/trusts/holding/<symbol>")
-def api_trust_holding_save(symbol: str):
-    """Holding selbst anlegen oder die Angaben einer vorhandenen ändern (Beteiligungen, Stichtag, Aktienzahl)."""
+@app.post("/api/trusts/holding/<symbol>")
+def api_trust_holding_check(symbol: str):
+    """Eigene Holding prüfen und durchrechnen (Beteiligungen, Stichtag, Aktienzahl): {definition, detail}. Speichern
+    tut der Browser die bereinigte Definition; weitere eigene Holdings stehen im Feld „context“."""
     sym = _symbol(symbol)
-    userdata.save_holding_def(sym, _body())
-    return jsonify(trusts.detail(sym))
+    body = _body()
+    if body.get("context") is not None:
+        request.environ["aktientool.context"] = json.dumps(body["context"])
+    definition = userdata.clean_holding_def(sym, body.get("definition") or {})
+    userdata.add_holding_to_context(sym, definition)
+    return jsonify({"definition": definition, "detail": trusts.detail(sym)})
 
 
-@app.delete("/api/trusts/holding/<symbol>")
-def api_trust_holding_remove(symbol: str):
-    """Eigene Angaben löschen; bei mitgelieferten Holdings gelten danach wieder die Werte aus holdings.json."""
+# ---------------------------------------------------------------- Alarme (gespeichert im Browser, geprüft hier)
+
+@app.get("/api/alerts/types")
+def api_alert_types():
+    return jsonify(userdata.ALERT_TYPES)
+
+
+@app.get("/api/alerts/baseline/<symbol>")
+def api_alert_baseline(symbol: str):
+    """Ausgangswert für „Dividende gekürzt“: Dividende der letzten 12 Monate (Kurswährung und, falls möglich, Euro)."""
     sym = _symbol(symbol)
-    userdata.remove_holding_def(sym)
-    return jsonify(trusts.detail(sym) or {})
-
-
-# ---------------------------------------------------------------- Notizen
-
-@app.get("/api/notes/<symbol>")
-def api_note(symbol: str):
-    return jsonify(userdata.note(_symbol(symbol)))
-
-
-@app.put("/api/notes/<symbol>")
-def api_note_save(symbol: str):
-    return jsonify(userdata.save_note(_symbol(symbol), str(_body().get("text", ""))))
-
-
-# ---------------------------------------------------------------- Depot
-
-@app.get("/api/depot")
-def api_depot():
-    return jsonify(userdata.positions())
-
-
-@app.post("/api/depot")
-def api_depot_add():
-    data = _body()
-    return jsonify(userdata.add_position(_symbol(str(data.get("symbol", ""))), data))
-
-
-@app.put("/api/depot/<item_id>")
-def api_depot_update(item_id: str):
-    return jsonify(userdata.update_position(item_id, _body()))
-
-
-@app.post("/api/depot/restore")
-def api_depot_restore():
-    data = _body()
-    return jsonify(userdata.restore_position(_symbol(str(data.get("symbol", ""))), data))
-
-
-@app.post("/api/depot/import")
-def api_depot_import():
-    rows = _body().get("items")
-    if not isinstance(rows, list) or not rows:
-        raise ApiError("Keine Käufe zum Importieren.")
-    if len(rows) > 500:
-        raise ApiError("Höchstens 500 Käufe auf einmal.")
-    if not all(isinstance(r, dict) for r in rows):
-        raise ApiError("Jeder Kauf muss ein JSON-Objekt sein.")
-    return jsonify(userdata.add_positions([(_symbol(str(r.get("symbol", ""))), r) for r in rows]))
-
-
-@app.delete("/api/depot/<item_id>")
-def api_depot_remove(item_id: str):
-    return jsonify(userdata.remove_position(item_id))
-
-
-# ---------------------------------------------------------------- Alarme
-
-@app.get("/api/alerts")
-def api_alerts():
-    return jsonify({"alerts": userdata.alerts(), "types": userdata.ALERT_TYPES, "status": alerts.status()})
-
-
-@app.post("/api/alerts")
-def api_alerts_add():
-    data = _body()
-    sym = _symbol(str(data.get("symbol", "")))
-    if data.get("type") == "dividend_cut":
-        # Ausgangswert merken: ausgelöst wird, wenn die Dividende der letzten 12 Monate darunter fällt
-        row = service.summary_row(sym)
-        data["baseline"] = row.get("div_ttm") or None
-        if not data["baseline"]:
-            raise ApiError("Die Aktie zahlt derzeit keine Dividende.")
-        shown = eur.summary(row)
-        data["baseline_eur"] = shown.get("div_ttm") if shown.get("currency") == "EUR" else None
-    return jsonify(userdata.add_alert(sym, data))
-
-
-@app.post("/api/alerts/restore")
-def api_alerts_restore():
-    data = _body()
-    index = data.get("index")
-    return jsonify(userdata.restore_alert(_symbol(str(data.get("symbol", ""))), data,
-                                          int(index) if isinstance(index, (int, float)) else None))
-
-
-@app.delete("/api/alerts/<item_id>")
-def api_alerts_remove(item_id: str):
-    return jsonify(userdata.remove_alert(item_id))
-
-
-@app.post("/api/alerts/<item_id>/reset")
-def api_alerts_reset(item_id: str):
-    """Ausgelösten Alarm wieder scharf schalten."""
-    return jsonify(userdata.update_alerts({item_id: {"triggered": None, "message": None, "seen": True}}))
-
-
-@app.post("/api/alerts/seen")
-def api_alerts_seen():
-    return jsonify(userdata.update_alerts({a["id"]: {"seen": True} for a in userdata.alerts() if a.get("triggered")}))
+    row = service.summary_row(sym)
+    baseline = row.get("div_ttm") or None
+    if not baseline:
+        raise ApiError("Die Aktie zahlt derzeit keine Dividende.")
+    shown = eur.summary(row)
+    return jsonify({"baseline": baseline, "baseline_eur": shown.get("div_ttm") if shown.get("currency") == "EUR" else None})
 
 
 @app.post("/api/alerts/check")
 def api_alerts_check():
-    return jsonify({"triggered": alerts.check(), "status": alerts.status()})
+    """Offene Alarme aus dem Browser prüfen: {"alerts": [...]} -> {"triggered": {Kennung: {triggered, message}}}."""
+    items = _body().get("alerts")
+    if not isinstance(items, list):
+        raise ApiError("Erwartet wird eine Liste von Alarmen.")
+    if len(items) > alerts.MAX_ALERTS:
+        raise ApiError(f"Höchstens {alerts.MAX_ALERTS} Alarme auf einmal.")
+    return jsonify({"triggered": alerts.check(items), "checked": datetime.now(timezone.utc).timestamp()})
 
 
 # ---------------------------------------------------------------- Tiefenanalyse und Tagesstände
@@ -599,7 +514,6 @@ def main() -> None:
               f"  Sonst anderen Port wählen: AKTIENTOOL_PORT=5051 .venv/bin/python run.py\n")
         raise SystemExit(1)
     print(f"\n  Aktientool läuft: {url}\n  Beenden mit Strg+C\n")
-    alerts.start_background()
     # Weltauswahl, Tiefenanalyse und Abschläge der Fonds auch ohne geöffnete Seite aktuell halten
     kick = threading.Timer(15, lambda: (world.status(), trusts.refresh_if_stale()))
     kick.daemon = True

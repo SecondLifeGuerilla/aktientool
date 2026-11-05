@@ -1,10 +1,11 @@
 // Einstieg: Router, Suche in der Kopfzeile, Hell/Dunkel-Umschalter, Hinweis auf ausgelöste Alarme
 import { renderAlarms } from "./alarms.js";
-import { api } from "./api.js";
+import { api, checkAlertsIfDue } from "./api.js";
 import { renderCalendar } from "./calendar.js";
 import { renderCallPut } from "./callput.js";
 import { disposeAll, rerenderAll } from "./charts.js";
 import { renderCompare } from "./compare.js";
+import { renderData } from "./daten.js";
 import { renderDepot } from "./depot.js";
 import { initTooltips } from "./glossary.js";
 import { renderHebel } from "./hebel.js";
@@ -59,6 +60,7 @@ async function route() {
   if (parts[0] === "hebel") return renderHebel(app, params, isCurrent);
   if (parts[0] === "score-check") return renderScoreCheck(app, params, isCurrent);
   if (parts[0] === "tutorial") return renderTutorial(app, params, isCurrent);
+  if (parts[0] === "daten") return renderData(app, params, isCurrent);
   document.title = "Aktientool";
   return renderHome(app, isCurrent);
 }
@@ -112,7 +114,8 @@ document.addEventListener("mode-changed", (e) => {
 });
 paintModeSwitch();
 
-// ---- Ausgelöste, noch nicht angesehene Alarme als Zahl in der Kopfzeile (alle 5 Minuten aktualisiert)
+// ---- Ausgelöste, noch nicht angesehene Alarme als Zahl in der Kopfzeile. Die Alarme liegen im Browser; geprüft
+// werden sie alle 30 Minuten, solange das Tool in einem Tab geöffnet ist (Prüfung beim Server, siehe api.js).
 async function paintAlertBadge() {
   const badge = document.getElementById("alert-badge");
   try {
@@ -122,8 +125,10 @@ async function paintAlertBadge() {
   } catch (e) { badge.hidden = true; }
 }
 document.addEventListener("alerts-changed", paintAlertBadge);
+document.addEventListener("store-changed", (e) => { if (["alarme", "*"].includes(e.detail.name)) paintAlertBadge(); });
 paintAlertBadge();
-setInterval(paintAlertBadge, 5 * 60 * 1000);
+setTimeout(checkAlertsIfDue, 5000);
+setInterval(() => { checkAlertsIfDue(); paintAlertBadge(); }, 5 * 60 * 1000);
 document.addEventListener("click", (e) => {
   const more = document.getElementById("navmore");
   if (more.open && !more.contains(e.target)) more.open = false;

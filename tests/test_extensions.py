@@ -283,109 +283,26 @@ class TestAlerts:
         assert alerts.evaluate({"type": "score_below", "value": 50, "symbol": "X"}, None, None, {"score_total": 40})
 
 
-class TestUserdata:
-    @pytest.fixture(autouse=True)
-    def files(self, tmp_path, monkeypatch):
-        for name in ("DEPOT_FILE", "NOTES_FILE", "ALERTS_FILE", "TRADABLE_FILE", "WATCH_GROUPS_FILE"):
-            monkeypatch.setattr(config, name, tmp_path / f"{name}.json")
+class TestUserContext:
+    """Eigene Angaben liegen im Browser; der Server bekommt nur Korrekturen und eigene Holdings als Kontext."""
 
-    def test_depot(self):
-        items = userdata.add_position("MSFT", {"shares": "10", "price": "400,50", "date": "2024-05-02"})
-        assert items[0]["price"] == 400.5 and items[0]["date"] == "2024-05-02"
-        with pytest.raises(userdata.InvalidInput):
-            userdata.add_position("MSFT", {"shares": "-1", "price": "1"})
-        # Korrektur: nur die übergebenen Felder ändern sich, Id und Währung bleiben
-        items = userdata.update_position(items[0]["id"], {"shares": 12, "note": "Nachkauf"})
-        assert items[0]["shares"] == 12 and items[0]["price"] == 400.5 and items[0]["note"] == "Nachkauf"
-        assert items[0]["currency"] == "EUR" and items[0]["date"] == "2024-05-02"
-        assert userdata.update_position(items[0]["id"], {"date": ""})[0]["date"] is None
-        with pytest.raises(userdata.InvalidInput):
-            userdata.update_position(items[0]["id"], {"price": "0"})
-        with pytest.raises(userdata.InvalidInput):
-            userdata.update_position("gibtsnicht", {"shares": 1})
-        assert userdata.remove_position(items[0]["id"]) == []
+    def test_context_is_validated(self):
+        ctx = userdata._parse_context(json.dumps({
+            "tradable": {"oke": True, "TSM": False, "BAD TICKER": True, "X": "ja"},
+            "holdings": {"NEW.DE": {"currency": "EUR", "as_of": "2026-09-30", "shares": 10,
+                                    "positions": [{"symbol": "a.de", "shares": 1}]},
+                         "BAD.DE": {"currency": "EURO"}}}))
+        assert ctx["tradable"] == {"OKE": True, "TSM": False}
+        assert list(ctx["holdings"]) == ["NEW.DE"] and ctx["holdings"]["NEW.DE"]["positions"][0]["symbol"] == "A.DE"
+        assert userdata._parse_context(b"kein json") == {"tradable": {}, "holdings": {}}
+        assert userdata._parse_context(None) == {"tradable": {}, "holdings": {}}
 
-    def test_depot_restore_and_import(self):
-        lot = userdata.add_position("MSFT", {"shares": "10", "price": "400", "note": "x"})[0]
-        userdata.remove_position(lot["id"])
-        # Rückgängig: gleiche Id, kein Duplikat beim zweiten Mal
-        items = userdata.restore_position("MSFT", lot)
-        assert [p["id"] for p in items] == [lot["id"]] and items[0]["currency"] == "EUR" and items[0]["note"] == "x"
-        assert len(userdata.restore_position("MSFT", lot)) == 1
-        # alter Kauf ohne Währung bleibt ohne Währung
-        old = {k: v for k, v in lot.items() if k != "currency"} | {"id": "abcdef1234"}
-        assert "currency" not in userdata.restore_position("MSFT", old)[-1]
-        # Import: alles oder nichts, Fehler nennt die Zeile
-        with pytest.raises(userdata.InvalidInput, match="Zeile 2"):
-            userdata.add_positions([("SAP.DE", {"shares": "5", "price": "180,5"}), ("ALV.DE", {"shares": "0", "price": "300"})])
-        assert len(userdata.positions()) == 2
-        items = userdata.add_positions([("SAP.DE", {"shares": "5", "price": "180,5", "date": "2023-01-02"}),
-                                        ("ALV.DE", {"shares": "2", "price": "300"})])
-        assert [p["symbol"] for p in items[-2:]] == ["SAP.DE", "ALV.DE"] and items[-2]["price"] == 180.5
-
-    def test_alert_restore(self):
-        userdata.add_alert("MSFT", {"type": "price_below", "value": "300"})
-        a = userdata.add_alert("SAP.DE", {"type": "below_fair", "value": "-5"})[1]
-        userdata.update_alerts({a["id"]: {"triggered": "2026-10-20", "message": "x", "seen": False}})
-        a = userdata.alerts()[1]
-        userdata.remove_alert(a["id"])
-        items = userdata.restore_alert("SAP.DE", a, 1)
-        assert items[1] == a and len(items) == 2
-        assert len(userdata.restore_alert("SAP.DE", a, 0)) == 2  # kein Duplikat
-        with pytest.raises(userdata.InvalidInput):
-            userdata.restore_alert("SAP.DE", a | {"id": "../x"})
-        with pytest.raises(userdata.InvalidInput):
-            userdata.restore_alert("SAP.DE", a | {"type": "unbekannt"})
-
-    def test_tradable_overrides(self):
+    def test_outside_request_and_key(self):
+        assert userdata.tradable_overrides() == {} and userdata.tradable_key() == "0"
+        with userdata.use_context({"tradable": {"OKE": True}}):
+            assert userdata.tradable_overrides() == {"OKE": True}
+            assert userdata.tradable_key() != "0"
         assert userdata.tradable_overrides() == {}
-        assert userdata.set_tradable("OKE", True) == {"OKE": True}
-        userdata.set_tradable("TSM", False)
-        assert userdata.tradable_overrides() == {"OKE": True, "TSM": False}
-        assert userdata.set_tradable("OKE", None) == {"TSM": False}
-        with pytest.raises(userdata.InvalidInput):
-            userdata.set_tradable("OKE", "ja")
-
-    def test_watch_groups(self):
-        assert userdata.watch_groups() == []
-        groups = userdata.save_watch_groups([
-            {"id": "div", "name": "  Dividende ", "symbols": ["ko", "KO", "PEP"]},
-            {"id": "us", "name": "USA", "parent": "div", "symbols": ["KO"]},
-            {"id": "x", "name": "Getränke", "parent": "us"},
-            {"name": "Ohne Id"},
-        ])
-        assert groups[0] == {"id": "div", "name": "Dividende", "parent": None, "symbols": ["KO", "PEP"]}
-        assert groups[2]["parent"] == "us" and groups[3]["id"]
-        assert userdata.watch_groups() == groups
-        bad = [
-            [{"id": "a", "name": ""}],  # ohne Namen
-            [{"id": "a", "name": "A", "parent": "fehlt"}],  # unbekannte Eltern
-            [{"id": "a", "name": "A", "parent": "b"}, {"id": "b", "name": "B", "parent": "a"}],  # Kreis
-            [{"id": "a", "name": "A"}, {"id": "b", "name": "B", "parent": "a"}, {"id": "c", "name": "C", "parent": "b"},
-             {"id": "d", "name": "D", "parent": "c"}],  # vierte Ebene
-            [{"id": "a", "name": "Tech"}, {"id": "b", "name": "tech"}],  # doppelt auf derselben Ebene
-            [{"id": "a", "name": "A", "symbols": ["kein ticker!"]}],
-        ]
-        for groups in bad:
-            with pytest.raises(userdata.InvalidInput):
-                userdata.save_watch_groups(groups)
-        # gleicher Name unter verschiedenen Eltern ist erlaubt
-        userdata.save_watch_groups([{"id": "a", "name": "A"}, {"id": "b", "name": "B"},
-                                    {"id": "c", "name": "USA", "parent": "a"}, {"id": "d", "name": "USA", "parent": "b"}])
-
-    def test_notes(self):
-        assert userdata.save_note("SAP.DE", "  These  ")["text"] == "These"
-        assert userdata.note("SAP.DE")["text"] == "These"
-        userdata.save_note("SAP.DE", "")
-        assert userdata.note("SAP.DE")["text"] == ""
-
-    def test_alerts(self):
-        items = userdata.add_alert("KO", {"type": "price_below", "value": "55"})
-        assert items[0]["value"] == 55.0 and items[0]["triggered"] is None
-        with pytest.raises(userdata.InvalidInput):
-            userdata.add_alert("KO", {"type": "unbekannt"})
-        userdata.update_alerts({items[0]["id"]: {"triggered": "2026-10-21", "seen": False}})
-        assert userdata.alerts()[0]["triggered"] == "2026-10-21"
 
 
 # ---------------------------------------------------------------- Gewinnstabilität bei Verlusten, Geschäftsentwicklung
@@ -495,17 +412,24 @@ class TestServerHome:
         monkeypatch.setattr(yahoo_screener, "quotes", lambda syms: [])
         assert client.get("/api/basiswert/XYZ").status_code == 404
 
-    def test_depot_endpoints(self, client, monkeypatch, tmp_path):
-        monkeypatch.setattr(config, "DEPOT_FILE", tmp_path / "depot.json")
-        lot = client.post("/api/depot", json={"symbol": "msft", "shares": "3", "price": "400"}).get_json()[0]
-        assert client.put(f"/api/depot/{lot['id']}", json={"shares": "4"}).get_json()[0]["shares"] == 4
-        assert client.delete(f"/api/depot/{lot['id']}").get_json() == []
-        assert client.post("/api/depot/restore", json=lot).get_json()[0]["id"] == lot["id"]
-        r = client.post("/api/depot/import", json={"items": [{"symbol": "sap.de", "shares": "1", "price": "x"}]})
-        assert r.status_code == 400 and "Zeile 1" in r.get_json()["error"]
-        items = client.post("/api/depot/import", json={"items": [{"symbol": "sap.de", "shares": "1", "price": "180"}]}).get_json()
-        assert [p["symbol"] for p in items] == ["MSFT", "SAP.DE"]
-        assert client.post("/api/depot/import", json={"items": []}).status_code == 400
+    def test_get_with_context_via_method_override(self, client, monkeypatch):
+        from aktientool import world
+        monkeypatch.setattr(world, "trade_republic", lambda sym, isin: {"tradable": userdata.tradable_overrides().get(sym)})
+        r = client.post("/api/handelbar/oke", data=json.dumps({"tradable": {"OKE": True}}),
+                        headers={"X-HTTP-Method-Override": "GET", "Content-Type": "application/json"})
+        assert r.status_code == 200 and r.get_json() == {"tradable": True}
+        assert client.get("/api/handelbar/oke").get_json() == {"tradable": None}
+
+    def test_alert_check_is_stateless(self, client, monkeypatch):
+        from aktientool.sources import fx, yahoo_screener
+        monkeypatch.setattr(yahoo_screener, "quotes", lambda syms: [{"symbol": "KO", "regularMarketPrice": 50.0, "currency": "EUR"}])
+        monkeypatch.setattr(fx, "eur_quotes", lambda ccys: {"EUR": {"rate": 1.0, "change": 0.0}})
+        items = [{"id": "a1", "symbol": "KO", "type": "price_below", "value": 55, "currency": "EUR"},
+                 {"id": "a2", "symbol": "KO", "type": "price_above", "value": 55, "currency": "EUR"},
+                 {"id": "a3", "symbol": "KO", "type": "price_below", "value": 55, "triggered": "2026-10-01"}]
+        out = client.post("/api/alerts/check", json={"alerts": items}).get_json()
+        assert list(out["triggered"]) == ["a1"] and "unter" in out["triggered"]["a1"]["message"]
+        assert client.post("/api/alerts/check", json={"alerts": "x"}).status_code == 400
 
     def test_world_stocks_skips_unknown(self, client, monkeypatch):
         from aktientool import world
