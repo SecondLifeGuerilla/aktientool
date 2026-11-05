@@ -20,7 +20,7 @@ export async function renderDepot(root, params, isCurrent) {
     <h1>Depot</h1>
     <p class="secondary" style="max-width:860px;margin-top:6px">Erfassen Sie Ihre Käufe mit Stückzahl und Kaufkurs in Euro (so, wie er in der
       Abrechnung Ihrer Bank steht). Das Tool zeigt Wert und Gewinn in Euro, die erwarteten Dividenden nach Quellen- und Abgeltungsteuer und
-      wie sich das Depot auf Länder, Sektoren und Währungen verteilt. Die Daten bleiben lokal (data/depot.json).</p>
+      wie sich das Depot auf Länder, Sektoren und Währungen verteilt. Die Daten bleiben in diesem Browser (sichern unter <a href="#/daten">Meine Daten</a>).</p>
     <div class="card" style="margin-top:14px">
       <form class="filters" id="depot-form" autocomplete="off">
         <div class="field search" style="max-width:260px"><label for="d-symbol">Aktie (Ticker oder Name)</label>

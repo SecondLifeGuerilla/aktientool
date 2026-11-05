@@ -580,7 +580,7 @@ const LESSONS = [
       {
         route: (c) => `#/alarme?neu=${encodeURIComponent(c.symbol)}`, target: "#a-form", title: "Auf den richtigen Preis warten",
         text: `<p>Gute Unternehmen sind selten billig. Statt den Kurs jeden Tag zu prüfen, lassen Sie das Tool warten: Der Alarm
-          „Kurs mindestens x % unter fairem Wert“ meldet sich, sobald Ihr Kandidat günstig wird. Geprüft wird alle 30 Minuten, solange das Tool läuft.</p>
+          „Kurs mindestens x % unter fairem Wert“ meldet sich, sobald Ihr Kandidat günstig wird. Geprüft wird alle 30 Minuten, solange das Tool im Browser geöffnet ist.</p>
           <p>Für Aktien, die Sie schon besitzen, gibt es Warnsignale: Dividende gekürzt oder Gesamt-Score fällt unter eine Schwelle.</p>`,
         task: {
           text: "Wählen Sie bei „Art“ den Alarm „Kurs mindestens x % unter fairem Wert“, geben Sie z. B. 10 ein und klicken Sie auf „Alarm anlegen“.",
@@ -609,7 +609,7 @@ const LESSONS = [
           q: "Wozu dienen die Notizen im Fazit eines Profils?",
           options: ["Sie werden an Yahoo Finance gesendet", "Um die Investment-These festzuhalten: warum kaufen, wann verkaufen", "Für die Steuererklärung"],
           correct: 1,
-          explain: "Die Notizen bleiben lokal auf Ihrem Rechner. Mit einer aufgeschriebenen These prüfen Sie nach jeden Quartalszahlen, ob Ihr Kaufgrund noch gilt.",
+          explain: "Die Notizen bleiben in Ihrem Browser. Mit einer aufgeschriebenen These prüfen Sie nach jeden Quartalszahlen, ob Ihr Kaufgrund noch gilt.",
         },
       },
       {

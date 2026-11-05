@@ -31,12 +31,16 @@ _lock = threading.Lock()
 _state = {"running": False, "paused": False, "done": 0, "total": 0, "fresh": 0, "current": None, "errors": 0,
           "started": None, "finished": None, "last_error": None, "throttled_until": None}
 _store: dict | None = None  # {"rows": {symbol: {...}}, "paused": bool}
+_store_mtime: float | None = None
 _stop = threading.Event()
 
 
 def _load() -> dict:
-    global _store
-    if _store is None:
+    """Ergebnisse aus dem Cache (einmal gelesen). Serverlos kommen neue Ergebnisse mit den täglichen Daten und
+    werden neu gelesen, sobald sich die Datei geändert hat."""
+    global _store, _store_mtime
+    if _store is None or (config.SERVERLESS and cache_mtime(config.DEEP_KEY) != _store_mtime):
+        _store_mtime = cache_mtime(config.DEEP_KEY)
         _store = peek(config.DEEP_KEY) or {"rows": {}, "paused": False}
         _state["paused"] = bool(_store.get("paused"))
     return _store
@@ -178,7 +182,10 @@ def _run(universe: list[dict]) -> None:
 
 def start(universe: list[dict], manual: bool = False) -> bool:
     """Startet den Lauf über `universe` ([{symbol, isin}], wichtigste zuerst); False, wenn er schon läuft
-    oder pausiert ist (eine Pause hebt nur ein manueller Start auf)."""
+    oder pausiert ist (eine Pause hebt nur ein manueller Start auf). Serverlos läuft die Tiefenanalyse im täglichen
+    Workflow (run_for), nie im Server."""
+    if config.SERVERLESS:
+        return False
     with _lock:
         _load()
         if _state["running"] or (_state["paused"] and not manual) or not universe:
@@ -194,7 +201,30 @@ def start(universe: list[dict], manual: bool = False) -> bool:
     return True
 
 
+def run_for(universe: list[dict], seconds: float) -> dict:
+    """Tiefenanalyse im laufenden Prozess, höchstens `seconds` lang (täglicher Workflow); setzt beim nächsten Aufruf
+    dort fort, wo sie aufgehört hat. Gibt den Stand am Ende zurück."""
+    with _lock:
+        _load()
+        _store["paused"] = False
+        now = time.time()
+        fresh = sum(_is_fresh(_store["rows"].get(u["symbol"]), now) for u in universe)
+        _state.update(running=True, paused=False, done=0, total=len(universe), fresh=fresh, errors=0,
+                      started=now, finished=None, last_error=None)
+        _stop.clear()
+    timer = threading.Timer(seconds, _stop.set)
+    timer.daemon = True
+    timer.start()
+    try:
+        _run(universe)
+    finally:
+        timer.cancel()
+    return status(len(universe))
+
+
 def pause() -> None:
+    if config.SERVERLESS:
+        return
     with _lock:
         _state["paused"] = True
     _stop.set()

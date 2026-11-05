@@ -1,0 +1,57 @@
+# Baut täglich die Daten, die die serverlose Fassung (Vercel) nicht selbst im Hintergrund aufbauen kann:
+# Weltauswahl, Tiefenanalyse, Handelsliste der LS Exchange, Closed-End-Fonds und Tagesstände.
+# Ergebnis: Branch „data“ (ohne Verlauf, wird jedes Mal ersetzt), den der Server liest (aktientool/remote.py).
+# Von Hand starten: GitHub → Actions → „Daten aktualisieren“ → „Run workflow“.
+name: Daten aktualisieren
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # täglich 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      deep_minutes:
+        description: "Minuten Tiefenanalyse (0 = nur Weltauswahl, Handelsliste und Fonds)"
+        default: "270"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daten
+  cancel-in-progress: false
+
+jobs:
+  daten:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      AKTIENTOOL_SEC_USER_AGENT: "Aktientool (GitHub-Workflow ${{ github.repository }}) aktientool@example.com"
+      DATA_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Letzten Stand holen
+        run: git clone --depth 1 --branch data "$DATA_REMOTE" out || mkdir -p out
+
+      - name: Handelsliste, Weltauswahl und Fonds
+        run: python scripts/daten.py --out out --deep-minutes 0
+
+      - name: Zwischenstand veröffentlichen
+        run: bash scripts/veroeffentlichen.sh out "Daten: Weltauswahl, Handelsliste, Fonds"
+
+      - name: Tiefenanalyse und Positionen der Fonds
+        if: ${{ !cancelled() }}
+        timeout-minutes: 320
+        run: python scripts/daten.py --out out --warm-trusts --deep-minutes "${{ github.event.inputs.deep_minutes || '270' }}"
+
+      - name: Ergebnis veröffentlichen
+        if: ${{ !cancelled() }}
+        run: bash scripts/veroeffentlichen.sh out "Daten: Tiefenanalyse"

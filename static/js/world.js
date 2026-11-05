@@ -291,12 +291,26 @@ function multiSelect(container, { id, label, termKey, allText, items, selected, 
 
 // ---- Daten: Status abfragen, bei Bedarf auf den Aufbau warten, Ergebnis im Speicher halten
 let memo = null; // { version, data }
+// serverlos: Weltauswahl und Tiefenanalyse baut ein täglicher Workflow, nicht der Server auf Knopfdruck
+let managed = false;
 
 async function waitForData(root, isCurrent) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (;;) {
     const st = await api.worldStatus();
     if (!isCurrent()) return null;
+    managed = !!st.managed;
+    if (!st.ready && managed) {
+      root.innerHTML = `<h1>Weltauswahl</h1>
+        <div class="loading-block"><div class="spinner"></div>
+          Die Weltauswahl wird einmal am Tag automatisch vorberechnet und ist gerade noch nicht verfügbar.
+          <p class="muted" style="margin-top:12px;font-size:13px;max-width:560px;margin-left:auto;margin-right:auto">${esc(st.error || "")}
+            Die Seite versucht es jede Minute von selbst erneut.</p>
+        </div>`;
+      await sleep(60000);
+      if (!isCurrent()) return null;
+      continue;
+    }
     if (st.ready) {
       if (!memo || memo.version !== st.version) memo = { version: st.version, data: await api.worldData() };
       return { status: st, data: memo.data };
@@ -449,9 +463,10 @@ export async function renderWorld(root, params, isCurrent) {
     const nCountries = Object.keys(d.countries).length;
     $("#w-status").innerHTML = `${F.int(d.count)} Aktien aus ${nCountries} Ländern ab ${F.big(d.min_cap_eur, "€")} Börsenwert ·
       Stand ${esc(date.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" }))} Uhr ·
-      <button class="linklike" id="w-refresh" type="button">aktualisieren</button>
+      ${managed ? '<span title="Ein Workflow baut die Weltauswahl jede Nacht neu">wird täglich aktualisiert</span>'
+        : '<button class="linklike" id="w-refresh" type="button">aktualisieren</button>'}
       ${d.warnings?.length ? `<br><span class="bad">${d.warnings.map(esc).join(" ")}</span>` : ""}`;
-    $("#w-refresh").addEventListener("click", refresh);
+    $("#w-refresh")?.addEventListener("click", refresh);
   }
 
   // Länder außerhalb der gewählten Kontinente bzw. Branchen außerhalb der gewählten Sektoren abwählen
@@ -834,15 +849,16 @@ export async function renderWorld(root, params, isCurrent) {
     const universe = d.universe || rows.length;
     const analysed = Math.min(d.analysed, universe);
     const pctDone = universe ? analysed / universe : 0;
-    const state = d.running
-      ? (d.throttled_until ? "Yahoo drosselt, kurze Pause …" : `läuft${d.current ? ` (gerade ${esc(d.current)})` : ""}`)
-      : d.paused ? "pausiert" : analysed >= universe ? "vollständig" : "wartet";
+    const state = managed ? (analysed >= universe ? "vollständig" : "wird jede Nacht fortgesetzt")
+      : d.running
+        ? (d.throttled_until ? "Yahoo drosselt, kurze Pause …" : `läuft${d.current ? ` (gerade ${esc(d.current)})` : ""}`)
+        : d.paused ? "pausiert" : analysed >= universe ? "vollständig" : "wartet";
     const fresh = version && memo?.version !== version
       ? ' · <button class="linklike" id="w-deep-load" type="button">neue Ergebnisse übernehmen</button>' : "";
     el.innerHTML = `<span>${term("tiefenanalyse", "Tiefenanalyse")}: ${F.int(analysed)} von ${F.int(universe)} Aktien (${F.pct(pctDone, 0)}) · ${state}${d.errors ? ` · ${F.int(d.errors)} Fehler` : ""}${fresh}</span>
       <div class="progress"><div style="width:${pctDone * 100}%"></div></div>
-      <button class="btn small" id="w-deep-toggle" type="button">${d.running ? "Pausieren" : analysed >= universe && !d.stale ? "Erneut prüfen" : "Starten"}</button>`;
-    $("#w-deep-toggle").addEventListener("click", async () => {
+      ${managed ? "" : `<button class="btn small" id="w-deep-toggle" type="button">${d.running ? "Pausieren" : analysed >= universe && !d.stale ? "Erneut prüfen" : "Starten"}</button>`}`;
+    $("#w-deep-toggle")?.addEventListener("click", async () => {
       try { paintDeep({ deep: d.running ? await api.deepPause() : await api.deepStart() }); } catch (e) { /* Anzeige bleibt */ }
       pollDeep();
     });

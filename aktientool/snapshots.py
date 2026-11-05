@@ -15,7 +15,7 @@ import math
 import re
 import statistics
 
-from . import config
+from . import config, remote
 
 KEEP = ["symbol", "isin", "country", "sector", "currency", "price", "market_cap",
         "score_total", "score_quality", "score_value", "score_growth", "score_momentum", "score_dividend", "magic_formula",
@@ -31,6 +31,8 @@ def _path(day: str):
 
 def save(rows: list[dict], day: str | None = None, overwrite: bool = False) -> bool:
     """Speichert den Stand des Tages; True, wenn eine Datei geschrieben wurde."""
+    if config.SERVERLESS:
+        return False  # serverlos schreibt der tägliche Workflow die Tagesstände
     day = day or dt.date.today().isoformat()
     path = _path(day)
     if path.exists() and not overwrite:
@@ -44,6 +46,8 @@ def save(rows: list[dict], day: str | None = None, overwrite: bool = False) -> b
 
 
 def dates() -> list[str]:
+    if config.SERVERLESS:
+        return remote.snapshot_dates()
     if not config.SNAPSHOT_DIR.exists():
         return []
     return sorted(m.group(1) for p in config.SNAPSHOT_DIR.iterdir() if (m := NAME.match(p.name)))
@@ -52,7 +56,8 @@ def dates() -> list[str]:
 def load(day: str) -> list[dict]:
     if not NAME.match(f"{day}.json.gz"):
         raise ValueError("Datum im Format JJJJ-MM-TT angeben")
-    return json.loads(gzip.decompress(_path(day).read_bytes()))["stocks"]
+    raw = remote.snapshot_file(day) if config.SERVERLESS else _path(day).read_bytes()
+    return json.loads(gzip.decompress(raw))["stocks"]
 
 
 def _ranks(values: list[float]) -> list[float]:

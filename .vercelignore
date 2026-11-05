@@ -1,0 +1,10 @@
+.claude
+.git
+.github
+.venv
+data
+tests
+scripts
+graphify-out
+Aktientool.command
+requirements-dev.txt

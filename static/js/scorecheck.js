@@ -28,7 +28,7 @@ export async function renderScoreCheck(root, params, isCurrent) {
   const body = root.querySelector("#s-body");
   if (days.length < 2) {
     body.innerHTML = `<div class="card"><p>${days.length ? `Bisher gibt es einen Tagesstand (${F.date(days[0])}).` : "Noch kein Tagesstand gespeichert."}
-      Die Weltauswahl speichert jeden Tag, an dem das Tool läuft, einen weiteren. Eine erste Auswertung ist ab dem zweiten Tag möglich,
+      Die Weltauswahl speichert jeden Tag einen weiteren. Eine erste Auswertung ist ab dem zweiten Tag möglich,
       aussagekräftig wird sie nach einigen Wochen bis Monaten (kurzfristig dominiert der Zufall).</p></div>`;
     return;
   }

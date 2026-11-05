@@ -228,7 +228,10 @@ def _run() -> None:
 
 
 def refresh_if_stale() -> bool:
-    """Lädt die Liste im Hintergrund neu, wenn sie fehlt oder veraltet ist; True, wenn ein Lauf gestartet wurde."""
+    """Lädt die Liste im Hintergrund neu, wenn sie fehlt oder veraltet ist; True, wenn ein Lauf gestartet wurde.
+    Serverlos lädt sie der tägliche Workflow (remote.py)."""
+    if config.SERVERLESS:
+        return False
     age = cache_age(CACHE_KEY)
     if age is not None and age < config.TTL_LSX:
         return False
@@ -238,6 +241,13 @@ def refresh_if_stale() -> bool:
         _state["running"] = True
     threading.Thread(target=_run, name="lsx-handelsliste", daemon=True).start()
     return True
+
+
+def refresh_now() -> None:
+    """Liste sofort (im laufenden Thread) neu laden, wenn sie veraltet ist; für den täglichen Workflow."""
+    age = cache_age(CACHE_KEY)
+    if age is None or age >= config.TTL_LSX:
+        _run()
 
 
 def mtime() -> float:

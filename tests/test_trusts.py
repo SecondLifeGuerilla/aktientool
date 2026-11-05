@@ -140,19 +140,15 @@ class TestHolding:
 
 
 class TestOwnHoldings:
-    @pytest.fixture(autouse=True)
-    def files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "USER_HOLDINGS_FILE", tmp_path / "holdings.json")
-
-    def test_save_validates_and_overrides_curated(self):
-        item = userdata.save_holding_def("PAH3.DE", {
-            "currency": "eur", "as_of": "2026-09-30", "shares": "306.250.000".replace(".", ""), "name": "Porsche SE",
+    def test_context_holding_overrides_curated(self):
+        item = userdata.clean_holding_def("PAH3.DE", {
+            "currency": "eur", "as_of": "2026-09-30", "shares": "306250000", "name": "Porsche SE",
             "positions": [{"symbol": "vow.de", "shares": "157000000", "name": "VW"}],
             "other": [{"name": "Nettoverschuldung", "value": "-4900000000"}]})
         assert item["currency"] == "EUR" and item["positions"][0]["symbol"] == "VOW.DE"
-        d = next(x for x in trusts.definitions() if x["symbol"] == "PAH3.DE")
-        assert d["custom"] and d["replaces_default"] and d["as_of"] == "2026-09-30"
-        userdata.remove_holding_def("PAH3.DE")
+        with userdata.use_context({"holdings": {"PAH3.DE": item}}):
+            d = next(x for x in trusts.definitions() if x["symbol"] == "PAH3.DE")
+            assert d["custom"] and d["replaces_default"] and d["as_of"] == "2026-09-30"
         d = next(x for x in trusts.definitions() if x["symbol"] == "PAH3.DE")
         assert not d["custom"]
 
@@ -160,10 +156,10 @@ class TestOwnHoldings:
         {"currency": "EURO"}, {"as_of": ""}, {"shares": "0"}, {"positions": [{"symbol": "X X", "shares": 1}]},
         {"other": [{"name": "x", "value": "NaN"}]}, {"positions": [], "other": []},
     ])
-    def test_save_rejects_bad_input(self, bad):
+    def test_rejects_bad_input(self, bad):
         base = {"currency": "EUR", "as_of": "2026-09-30", "shares": 10, "positions": [{"symbol": "A.DE", "shares": 1}], "other": []}
         with pytest.raises(userdata.InvalidInput):
-            userdata.save_holding_def("NEW.DE", {**base, **bad})
+            userdata.clean_holding_def("NEW.DE", {**base, **bad})
 
 
 class TestFundRows:

@@ -23,7 +23,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, NamedTuple
 
-from . import config, deep, snapshots, userdata
+from . import config, deep, remote, snapshots, userdata
 from .cache import cache_mtime, peek, store
 from .names import CONTINENTS, COUNTRIES, SECTORS, industry_de
 from .sources import fx, lsx, yahoo_screener
@@ -576,7 +576,9 @@ def _run() -> None:
 
 
 def start() -> bool:
-    """Startet den Aufbau im Hintergrund; False, wenn er schon läuft."""
+    """Startet den Aufbau im Hintergrund; False, wenn er schon läuft (serverlos: nie, siehe scripts/daten.py)."""
+    if config.SERVERLESS:
+        return False
     with _lock:
         if _state["running"]:
             return False
@@ -586,7 +588,10 @@ def start() -> bool:
 
 
 def status(auto_refresh: bool = True) -> dict:
-    """Stand der Daten. Veraltete Daten werden im Hintergrund erneuert (nicht öfter als alle 10 Minuten nach Fehlern)."""
+    """Stand der Daten. Veraltete Daten werden im Hintergrund erneuert (nicht öfter als alle 10 Minuten nach Fehlern).
+    Serverlos baut sie der tägliche Workflow; der Server lädt nur dessen Ergebnis (remote.py)."""
+    if config.SERVERLESS:
+        auto_refresh = False
     mtime = cache_mtime(CACHE_KEY)
     age = time.time() - mtime if mtime is not None else None
     with _lock:
@@ -605,15 +610,36 @@ def status(auto_refresh: bool = True) -> dict:
         start()
         with _lock:
             st = dict(_state)
-    if universe and config.DEEP_AUTO:
+    if universe and config.DEEP_AUTO and not config.SERVERLESS:
         deep.start(universe)  # läuft schon oder ist pausiert: tut nichts
     # version ändert sich mit jedem neuen Datenstand, geänderten Themen, neuen Ergebnissen der Tiefenanalyse, einer
     # neuen Handelsliste oder einer eigenen Korrektur zur Handelbarkeit; die Oberfläche lädt nur dann neu
-    version = (f"{int(mtime)}-{int(_themes_mtime())}-{int(deep.mtime())}-{int(lsx.mtime())}-{int(userdata.tradable_mtime())}"
+    version = (f"{int(mtime)}-{int(_themes_mtime())}-{int(deep.mtime())}-{int(lsx.mtime())}-{userdata.tradable_key()}"
                if mtime else None)
+    error = st["error"]
+    if config.SERVERLESS and mtime is None:
+        error = remote.status()["error"] or "Die täglich vorberechneten Daten sind noch nicht verfügbar."
     return {"ready": mtime is not None, "version": version, "age_seconds": age,
-            "running": st["running"], "done": st["done"], "total": st["total"], "error": st["error"],
+            "running": st["running"], "done": st["done"], "total": st["total"], "error": error,
+            # managed: Aufbau und Tiefenanalyse laufen täglich automatisch (serverlos), nicht auf Knopfdruck
+            "managed": config.SERVERLESS,
             "deep": deep.status(len(universe) if universe else None)}
+
+
+def build_now() -> dict:
+    """Weltauswahl sofort (im laufenden Thread) neu aufbauen und speichern; für den täglichen Workflow."""
+    data = build(config.WORLD_MIN_CAP_EUR)
+    store(CACHE_KEY, data)
+    with _lock:
+        _payload.clear()
+    return data
+
+
+def universe() -> list[dict]:
+    """Aktien der Weltauswahl, größte zuerst: [{symbol, isin}] (Reihenfolge der Tiefenanalyse)."""
+    with _lock:
+        p = _prepared()
+        return list(p["universe"]) if p else []
 
 
 def deep_start() -> bool:
@@ -632,7 +658,7 @@ def _themes_mtime() -> float:
 def _prepared() -> dict | None:
     """Daten aus dem Cache, ergänzt um die Themen. themes.json wird bei jeder Änderung neu angewendet,
     ohne die Börsen neu zu laden; ebenso die Handelsliste für Trade Republic. Aufruf nur unter _lock."""
-    key = (cache_mtime(CACHE_KEY), _themes_mtime(), deep.mtime(), lsx.mtime(), userdata.tradable_mtime())
+    key = (cache_mtime(CACHE_KEY), _themes_mtime(), deep.mtime(), lsx.mtime())
     if _payload.get("key") == key:
         return _payload
     data = peek(CACHE_KEY)
@@ -640,10 +666,11 @@ def _prepared() -> dict | None:
         return None
     deep_rows = deep.rows()
     alt = data.pop("alt_isins", {})
-    listing, overrides = lsx.current(), userdata.tradable_overrides()
+    # eigene Korrekturen zur Handelbarkeit kommen erst bei der Auslieferung dazu (je Anfrage, siehe payload)
+    listing = lsx.current()
     for r in data["stocks"]:
         deep.merge_into(r, deep_rows.get(r["symbol"]))
-        _mark_tradable(r, alt.get(r["symbol"]), listing, overrides)
+        _mark_tradable(r, alt.get(r["symbol"]), listing, {})
     data["trade_republic"] = lsx.status()
     try:
         snapshots.save(data["stocks"])  # ein Tagesstand pro Tag (für die Auswertung der Scores)
@@ -672,10 +699,32 @@ def _prepared() -> dict | None:
     return _payload
 
 
+def _apply_override(row: dict, overrides: dict[str, bool]) -> dict:
+    """Zeile mit der eigenen Korrektur zur Handelbarkeit (Kopie, die zwischengespeicherte Zeile bleibt unverändert)."""
+    sym = row.get("symbol")
+    if sym not in overrides:
+        return row
+    out = {**row, "tr": int(overrides[sym])}
+    if not overrides[sym]:
+        out.pop("tr_isin", None)
+    return out
+
+
 def payload(compressed: bool) -> bytes | None:
+    """Die ganze Weltauswahl als JSON (bzw. gzip). Mit eigenen Korrekturen zur Handelbarkeit wird sie für diese
+    Anfrage neu geschrieben, sonst die zwischengespeicherte Fassung ausgeliefert."""
+    overrides = userdata.tradable_overrides()
     with _lock:
         p = _prepared()
-        return p["gz" if compressed else "raw"] if p else None
+        if not p:
+            return None
+        if not overrides:
+            return p["gz" if compressed else "raw"]
+        raw = p["raw"]
+    data = json.loads(raw)
+    data["stocks"] = [_apply_override(r, overrides) for r in data["stocks"]]
+    out = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return gzip.compress(out, 5) if compressed else out
 
 
 def stock(symbol: str) -> dict | None:
@@ -686,6 +735,7 @@ def stock(symbol: str) -> dict | None:
         if not row:
             return None
         country = p["countries"].get(row["country"], {})
+        row = _apply_override(row, userdata.tradable_overrides())
         return {**row, "country_name": country.get("name"), "continent": country.get("continent"), "universe": p["count"]}
 
 
@@ -727,7 +777,10 @@ def symbol_for_isin(isin: str) -> str | None:
 
 def tradable_flags(symbols: list[str]) -> dict[str, bool]:
     """Handelbar ja/nein für die Ticker, die in der Weltauswahl stehen (Suchvorschläge); andere fehlen."""
+    overrides = userdata.tradable_overrides()
     with _lock:
         p = _prepared()
         rows = p["by_symbol"] if p else {}
-        return {s: bool(rows[s]["tr"]) for s in symbols if s in rows and "tr" in rows[s]}
+        found = {s: bool(rows[s]["tr"]) for s in symbols if s in rows and "tr" in rows[s]}
+    found.update({s: overrides[s] for s in symbols if s in overrides and s in rows})
+    return found

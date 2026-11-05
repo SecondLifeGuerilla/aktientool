@@ -13,8 +13,9 @@ export async function renderAlarms(root, params, isCurrent) {
   const preset = params.get("neu") || "";
   root.innerHTML = `
     <h1>Alarme</h1>
-    <p class="secondary" style="max-width:860px;margin-top:6px">Das Tool prüft Ihre Alarme alle 30 Minuten, solange es läuft, und meldet sich mit
-      einer macOS-Mitteilung (auf Wunsch auch per E-Mail, siehe README). Ausgelöste Alarme erscheinen hier und als Zahl in der Kopfzeile.</p>
+    <p class="secondary" style="max-width:860px;margin-top:6px">Ihre Alarme liegen in diesem Browser. Das Tool prüft sie alle 30 Minuten, solange es
+      in einem Tab geöffnet ist, und auf Knopfdruck. Ausgelöste Alarme erscheinen hier und als Zahl in der Kopfzeile; auf Wunsch zusätzlich als
+      Mitteilung des Browsers <button class="linklike" id="a-notify" type="button" hidden>Mitteilungen erlauben</button>.</p>
     <div class="card" style="margin-top:14px">
       <form class="filters" id="a-form" autocomplete="off">
         <div class="field search" style="max-width:260px"><label for="a-symbol">Aktie</label>
@@ -55,7 +56,9 @@ export async function renderAlarms(root, params, isCurrent) {
     }
     const st = data.status;
     $("#a-status").textContent = `${st.open} aktiv, ${st.total - st.open} ausgelöst · zuletzt geprüft: ${st.last_check ? new Date(st.last_check * 1000).toLocaleString("de-DE") : "noch nicht"}
-      · Mitteilung: ${st.notify ? "macOS" : "aus"}${st.email ? " + E-Mail" : ""}${st.error ? ` · Fehler: ${st.error}` : ""}`;
+      · Mitteilung im Browser: ${st.notify ? "an" : "aus"}${st.error ? ` · Fehler: ${st.error}` : ""}`;
+    const nb = $("#a-notify");
+    nb.hidden = st.notify || typeof Notification === "undefined" || Notification.permission === "denied";
     // Kursschwellen in Euro; Alarme aus der Zeit vor der Euro-Anzeige (ohne "currency") gelten in der Kurswährung
     const describe = (a) => (a.type === "dividend_cut"
       ? `Dividende sinkt unter ${F.isNum(a.baseline_eur) ? F.money(a.baseline_eur, "€") : F.money(a.baseline, "")} (12 Monate)`
@@ -97,6 +100,10 @@ export async function renderAlarms(root, params, isCurrent) {
       $("#a-value").value = "";
       load(false);
     } catch (err) { $("#a-msg").textContent = err.message; }
+  });
+  $("#a-notify").addEventListener("click", async () => {
+    try { await Notification.requestPermission(); } catch (e) { /* Browser ohne Mitteilungen */ }
+    load(false);
   });
   $("#a-check").addEventListener("click", async () => {
     $("#a-msg").textContent = "Prüfe …";
