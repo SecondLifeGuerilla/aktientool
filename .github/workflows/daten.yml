@@ -45,7 +45,7 @@ jobs:
         run: python scripts/daten.py --out out --deep-minutes 0
 
       - name: Zwischenstand veröffentlichen
-        run: bash scripts/veroeffentlichen.sh out "Daten: Weltauswahl, Handelsliste, Fonds"
+        run: 'bash scripts/veroeffentlichen.sh out "Daten - Weltauswahl, Handelsliste, Fonds"'
 
       - name: Tiefenanalyse und Positionen der Fonds
         if: ${{ !cancelled() }}
@@ -54,4 +54,4 @@ jobs:
 
       - name: Ergebnis veröffentlichen
         if: ${{ !cancelled() }}
-        run: bash scripts/veroeffentlichen.sh out "Daten: Tiefenanalyse"
+        run: 'bash scripts/veroeffentlichen.sh out "Daten - Tiefenanalyse"'
