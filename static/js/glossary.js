@@ -2,7 +2,7 @@
 // `wiki`: Wikipedia-Artikel (deutsch, "en:" für englisch), aus dem sich eine Zusammenfassung nachladen lässt.
 import { escapeHtml as esc } from "./format.js";
 
-export const GROUPS = ["Bewertung", "Rentabilität", "Wachstum", "Dividende", "Bilanz & Risiko", "Kurs & Markt", "Scores", "Allgemein"];
+export const GROUPS = ["Bewertung", "Rentabilität", "Wachstum", "Dividende", "Bilanz & Risiko", "Kurs & Markt", "Scores", "Trusts & Holdings", "Hebelprodukte", "Allgemein"];
 
 export const TERMS = {
   // ---- Bewertung
@@ -106,11 +106,30 @@ export const TERMS = {
     group: "Rentabilität", term: "Nettomarge (Umsatzrendite)", wiki: "Rentabilität",
     short: "Gewinn ÷ Umsatz: wie viel von jedem Euro Umsatz am Ende als Gewinn übrig bleibt.",
   },
+  operative_marge: {
+    group: "Rentabilität", term: "Operative Marge (EBIT-Marge)", wiki: "EBIT",
+    short: "Operativer Gewinn ÷ Umsatz: was das Kerngeschäft vor Zinsen und Steuern verdient.",
+    long: "Steigt die operative Marge mit dem Umsatz, wachsen die Kosten langsamer als das Geschäft (Skaleneffekte). Bei Firmen in der Verlustphase ist das das wichtigste Zeichen, dass sie sich der Gewinnschwelle nähern.",
+  },
+  fcf_marge: {
+    group: "Rentabilität", term: "Free-Cashflow-Marge", wiki: "Cashflow",
+    short: "Free Cashflow ÷ Umsatz: wie viel vom Umsatz als frei verfügbares Geld übrig bleibt. Negativ heißt: Das Geschäft verbraucht Geld.",
+  },
+  fe_quote: {
+    group: "Rentabilität", term: "F&E-Quote", wiki: "Forschung und Entwicklung",
+    short: "Aufwand für Forschung und Entwicklung ÷ Umsatz. Hoch bei Technologie- und Pharmafirmen.",
+    long: "Eine hohe F&E-Quote drückt heute den Gewinn, kann aber künftiges Wachstum sichern. Sinkt sie, während der Umsatz wächst, verteilen sich die Entwicklungskosten auf mehr Umsatz.",
+  },
 
   // ---- Wachstum
   umsatzwachstum: {
     group: "Wachstum", term: "Umsatzwachstum", wiki: "Wachstumsrate",
     short: "Umsatz der letzten 12 Monate gegenüber dem Vorjahreszeitraum.",
+  },
+  umsatzerwartung: {
+    group: "Wachstum", term: "Umsatz- und Gewinnschätzungen", wiki: "Finanzanalyst",
+    short: "Durchschnitt der Analystenschätzungen für Umsatz und Gewinn je Aktie im laufenden und nächsten Geschäftsjahr, mit der Spanne von der niedrigsten bis zur höchsten Schätzung (Quelle: Yahoo).",
+    long: "Je weniger Analysten schätzen und je größer die Spanne, desto unsicherer ist die Prognose. Bei Firmen in der Verlustphase zeigen die Gewinnschätzungen, wann der Markt mit der Gewinnschwelle rechnet.",
   },
   gewinnwachstum: {
     group: "Wachstum", term: "Gewinnwachstum", wiki: "Gewinn je Aktie",
@@ -132,7 +151,7 @@ export const TERMS = {
   gewinnstabilitaet: {
     group: "Wachstum", term: "Gewinnstabilität", wiki: "Bestimmtheitsmaß",
     short: "Wie gleichmäßig der Gewinn über die Jahre gestiegen ist: 1 = perfekt gleichmäßig steigend, 0 = kein Trend, negativ = fallend. Über 0,8 gilt als sehr zuverlässig.",
-    long: "Berechnet als Bestimmtheitsmaß R² einer Trendgeraden durch die Jahreswerte der letzten bis zu 11 Jahre, mit dem Vorzeichen der Steigung. Firmen mit stabil steigenden Gewinnen lassen sich zuverlässiger bewerten.",
+    long: "Berechnet als Bestimmtheitsmaß R² einer Trendgeraden durch die Jahreswerte der letzten bis zu 11 Jahre, mit dem Vorzeichen der Steigung. Firmen mit stabil steigenden Gewinnen lassen sich zuverlässiger bewerten. War mindestens die Hälfte der Jahre ein Verlust, gibt es keinen Wert: Schrumpfende Verluste ergäben sonst eine steigende Trendlinie und damit eine scheinbar gute Stabilität.",
   },
 
   // ---- Dividende
@@ -178,6 +197,19 @@ export const TERMS = {
     group: "Bilanz & Risiko", term: "Tilgungsjahre", wiki: "Verschuldungsgrad",
     short: "Nettoverschuldung ÷ Free Cashflow: in wie vielen Jahren die Firma ihre Schulden aus dem freien Geldzufluss tilgen könnte.",
   },
+  nettoliquiditaet: {
+    group: "Bilanz & Risiko", term: "Nettoliquidität / Nettoverschuldung", wiki: "Nettofinanzverschuldung",
+    short: "Flüssige Mittel minus Finanzschulden. Positiv: mehr Geld als Schulden (Nettoliquidität), negativ: Nettoverschuldung. Stand nach dem letzten Quartal.",
+  },
+  eigenkapitalquote: {
+    group: "Bilanz & Risiko", term: "Eigenkapitalquote", wiki: "Eigenkapitalquote",
+    short: "Eigenkapital ÷ Bilanzsumme. Über 30 % gilt bei Industrie- und Technologiefirmen als solide; Banken und Versicherungen haben naturgemäß niedrige Quoten.",
+  },
+  cash_reichweite: {
+    group: "Bilanz & Risiko", term: "Cash-Reichweite", wiki: "Cash Burn Rate",
+    short: "Wie viele Jahre die flüssigen Mittel reichen, wenn der Free Cashflow so negativ bleibt wie in den letzten 12 Monaten. Unter 2 Jahren wird meist bald neues Geld nötig.",
+    long: "Rechnerischer Wert: Kasse ÷ Mittelabfluss. Wachsende Umsätze und bessere Margen verlängern die Reichweite. Reicht sie nicht, folgen oft Kredite oder Kapitalerhöhungen; Kapitalerhöhungen verwässern die bisherigen Aktionäre.",
+  },
   beta: {
     group: "Bilanz & Risiko", term: "Beta", wiki: "Betafaktor",
     short: "Schwankung der Aktie im Vergleich zum Gesamtmarkt: 1 = wie der Markt, 1,5 = 50 % stärkere Ausschläge, unter 1 = ruhiger.",
@@ -218,6 +250,11 @@ export const TERMS = {
     group: "Kurs & Markt", term: "Allzeithoch",
     short: "Höchster Schlusskurs, den die Aktie je erreicht hat.",
   },
+  aktionaersstruktur: {
+    group: "Kurs & Markt", term: "Aktionärsstruktur", wiki: "Streubesitz",
+    short: "Anteil der Aktien bei Insidern (Gründer, Management, Großaktionäre) und bei institutionellen Anlegern (Fonds, Versicherungen, Pensionskassen). Quelle: Yahoo.",
+    long: "Viel Insiderbesitz bindet das Management an den Erfolg der Aktionäre, kann aber auch bedeuten, dass wenige Großaktionäre das Sagen haben. Ein hoher Anteil institutioneller Anleger zeigt, dass professionelle Investoren die Firma beobachten.",
+  },
   isin: {
     group: "Kurs & Markt", term: "ISIN", wiki: "Internationale Wertpapierkennnummer",
     short: "Weltweit eindeutige Kennung eines Wertpapiers. Die ersten zwei Buchstaben stehen für das Sitzland des Herausgebers.",
@@ -229,6 +266,43 @@ export const TERMS = {
   adr: {
     group: "Kurs & Markt", term: "ADR (American Depositary Receipt)", wiki: "American Depositary Receipt",
     short: "In den USA gehandeltes Zertifikat auf eine ausländische Aktie, z. B. TSM für TSMC aus Taiwan.",
+  },
+  trade_republic: {
+    group: "Kurs & Markt", term: "Handelbar bei Trade Republic", wiki: "Lang & Schwarz",
+    short: "Laut Handelsliste der LS Exchange (Lang & Schwarz), die jeden Börsentag neu erscheint. Trade Republic veröffentlicht keine eigene Liste.",
+    long: "Trade Republic hat bis Ende Juni 2026 alle Aktienorders über die LS Exchange ausgeführt; seitdem vergleicht „Best Price“ zusätzlich andere Börsen. Die Liste der LS Exchange ist deshalb eine gute, aber keine amtliche Annäherung. Manche Firmen gibt es nur als ADR oder GDR (z. B. TSMC, Samsung); das Profil nennt dann die ISIN, unter der man sie in der App findet. Stimmt die Angabe einmal nicht, lässt sie sich im Profil korrigieren. Ob nur handelbare Aktien gezeigt werden, stellt der Schalter „nur Trade Republic“ in der Weltauswahl ein.",
+  },
+
+  // ---- Trusts & Holdings
+  nav: {
+    group: "Trusts & Holdings", term: "Innerer Wert (NAV, Net Asset Value)", wiki: "Nettoinventarwert",
+    short: "Was alle Beteiligungen und sonstigen Vermögenswerte abzüglich Schulden wert sind, geteilt durch die Zahl der Aktien.",
+    long: "Bei Investment Trusts und Closed-End-Fonds rechnet die Fondsgesellschaft den NAV meist täglich aus; das Tool übernimmt ihn von Morningstar bzw. der AIC (Stand Vortag). Holdings veröffentlichen ihn nur mit den Quartalsberichten. Das Tool rechnet ihn deshalb selbst: börsennotierte Beteiligungen zum aktuellen Kurs, nicht börsennotierte Beteiligungen, Kasse und Schulden mit den Werten aus dem letzten Bericht. Bei Private Equity, Immobilien und Infrastruktur ist der NAV eine Schätzung, die nur alle drei bis sechs Monate aktualisiert wird.",
+  },
+  abschlag_nav: {
+    group: "Trusts & Holdings", term: "Abschlag / Aufschlag zum NAV", wiki: "Closed-End-Fonds",
+    short: "Kurs ÷ NAV − 1. Negativ = Abschlag: Die Aktie kostet weniger, als die Beteiligungen wert sind. Positiv = Aufschlag.",
+    long: "Bei −10 % zahlt man 90 € für 100 € Vermögen. Weil ein Trust (anders als ein ETF) keine Anteile zurücknimmt, bestimmt allein die Börse den Kurs; Abschläge von 5 bis 15 % sind normal, bei Holdings oft 20 bis 50 %. Der Abschlag bringt zusätzlichen Gewinn nur, wenn er kleiner wird, etwa durch Aktienrückkäufe, ein Übernahmeangebot oder bessere Stimmung; wird er größer, verliert man trotz steigendem NAV. Deshalb zählt vor allem der Vergleich mit dem üblichen Abschlag.",
+  },
+  ueblicher_abschlag: {
+    group: "Trusts & Holdings", term: "Üblicher Abschlag und Einordnung",
+    short: "Durchschnittlicher Abschlag der Vergangenheit (5, 3 oder 1 Jahr). „Günstiger als üblich“ heißt: heute mindestens 2 Prozentpunkte mehr Abschlag als im Schnitt.",
+    long: "Für britische Trusts liefert die AIC den Durchschnitt über 1, 3 und 5 Jahre, das Tool nimmt den längsten. Für Londoner Fonds ohne AIC-Daten nimmt es den 12-Monats-Schnitt von Morningstar (erst nach dem Aufklappen bekannt). Für Fonds anderer Börsen und für Holdings gibt es keinen kostenlosen Durchschnitt; dort zählt nur der heutige Abschlag. Ein ungewöhnlich großer Abschlag kann eine Chance sein, aber auch auf Probleme hindeuten (Zweifel an Bewertungen, Schulden, Mittelabflüsse).",
+  },
+  closed_end_fonds: {
+    group: "Trusts & Holdings", term: "Investment Trust / Closed-End-Fonds", wiki: "Closed-End-Fonds",
+    short: "Börsennotierte Gesellschaft, die das Geld ihrer Aktionäre in andere Wertpapiere oder Firmen investiert, mit fester Zahl an Aktien.",
+    long: "Anders als bei einem ETF oder offenen Fonds werden keine Anteile neu ausgegeben oder zurückgenommen, wenn Anleger kaufen oder verkaufen. Der Börsenkurs kann deshalb dauerhaft vom inneren Wert abweichen. Britische Investment Trusts (z. B. Scottish Mortgage, Polar Capital Technology) und US-Closed-End-Fonds sind die größten Gruppen; in Deutschland sind sie Aktien und werden auch so besteuert. Viele dürfen Kredite aufnehmen („Gearing“) und zahlen Dividenden aus Rücklagen.",
+  },
+  gearing: {
+    group: "Trusts & Holdings", term: "Fremdkapital (Gearing)", wiki: "Leverage-Effekt",
+    short: "Kredite eines Trusts in % seines Nettovermögens. 10 % heißt: Für je 100 € Eigenkapital sind 110 € angelegt.",
+    long: "Gearing verstärkt Gewinne und Verluste: Steigt das Portfolio um 10 %, steigt der NAV bei 10 % Gearing um rund 11 % (abzüglich Zinsen); fällt es, fällt der NAV stärker. Negative Werte bedeuten, dass der Trust Kasse hält.",
+  },
+  laufende_kosten: {
+    group: "Trusts & Holdings", term: "Laufende Kosten (Ongoing Charge)", wiki: "Total Expense Ratio",
+    short: "Jährliche Verwaltungskosten in % des NAV, ohne Erfolgsgebühren. Sie mindern die Rendite jedes Jahr.",
+    long: "Bei aktiv verwalteten Trusts sind 0,5 bis 1 % üblich, bei Spezialthemen und Private Equity deutlich mehr. Ein Trust mit 1,5 % Kosten muss jedes Jahr 1,5 Prozentpunkte besser sein als ein ETF für 0,2 %, um mitzuhalten. Ein dauerhafter Abschlag gleicht hohe Kosten teilweise aus, weil man weniger als den NAV bezahlt.",
   },
 
   // ---- Scores
@@ -288,6 +362,7 @@ export const TERMS = {
   bilanzwaehrung: {
     group: "Allgemein", term: "Bilanzwährung",
     short: "Währung, in der eine Firma ihre Abschlüsse erstellt. Kann von der Kurswährung abweichen (z. B. Shell: Bilanz in US-Dollar, Kurs in Pence).",
+    long: "Angezeigt wird trotzdem alles in Euro: Kurse, Renditen und das Allzeithoch zum Wechselkurs des jeweiligen Tages (wie ein Euro-Chart beim Broker), Gewinn, Umsatz und Dividende je Jahr zum heutigen Wechselkurs. So bleiben die Wachstumsraten frei von Währungsschwankungen. Intern rechnet das Tool Bewertung, Momentum und Scores in der Originalwährung, damit sie mit der Weltauswahl übereinstimmen.",
   },
   esef: {
     group: "Allgemein", term: "ESEF-Jahresberichte", wiki: "European Single Electronic Format",
@@ -365,6 +440,83 @@ export const TERMS = {
     group: "Dividende", term: "Dividende nach Steuern (Quellensteuer)", wiki: "Quellensteuer",
     short: "Dividendenrendite nach ausländischer Quellensteuer und deutscher Abgeltungsteuer (25 % plus Soli, ohne Kirchensteuer und Freibetrag).",
     long: "Viele Länder behalten auf Dividenden eine Quellensteuer ein. Bis zum Satz des Doppelbesteuerungsabkommens (meist 15 %) wird sie auf die deutsche Abgeltungsteuer angerechnet; was darüber liegt (Schweiz 35 % − 15 % = 20 %), ist nur per Antrag im Ausland zurückzuholen. Die Sätze stehen in quellensteuer.json und lassen sich anpassen; Angaben ohne Gewähr.",
+  },
+
+  // ---- Hebelprodukte (Call/Put-Rechner)
+  optionsschein: {
+    group: "Hebelprodukte", term: "Optionsschein (Call/Put)", wiki: "Optionsschein",
+    short: "Ein Call gewinnt, wenn die Aktie steigt, ein Put, wenn sie fällt – mit Hebel. Bei Fälligkeit zählt nur, wie weit die Aktie über (Call) bzw. unter (Put) dem Basispreis steht.",
+    long: "Vor der Fälligkeit enthält der Preis zusätzlich einen Zeitwert: die Chance, dass sich die Aktie bis dahin noch günstig bewegt. Dieser Zeitwert schmilzt Tag für Tag ab, am schnellsten in den letzten Wochen. Steht die Aktie bei Fälligkeit unter dem Basispreis (Call) bzw. darüber (Put), verfällt der Schein wertlos. Der Rechner bewertet Optionsscheine mit dem Black-Scholes-Modell, das auch die Emittenten verwenden.",
+  },
+  knockout: {
+    group: "Hebelprodukte", term: "Knock-out-Produkt (Turbo, Mini-Future)", wiki: "Knock-out-Zertifikat",
+    short: "Hebelprodukt ohne Zeitwert: Der Wert ist (Aktienkurs − Basispreis) × Bezugsverhältnis beim Call, umgekehrt beim Put. Berührt die Aktie die Knock-out-Schwelle, ist das Produkt sofort (fast) wertlos.",
+    long: "Bei Turbos liegt die Schwelle auf dem Basispreis, dann bleibt nach dem Knock-out nichts übrig. Bei Mini-Futures liegt sie etwas davor; dann wird ein kleiner Restwert ausgezahlt. Wichtig: Schon eine kurze Berührung der Schwelle, auch nachbörslich, beendet das Produkt – selbst wenn die Aktie danach wieder dreht. Die meisten Knock-outs laufen unbegrenzt; dafür verschiebt der Emittent den Basispreis täglich um Finanzierungskosten, die der Rechner nicht berücksichtigt.",
+  },
+  basispreis: {
+    group: "Hebelprodukte", term: "Basispreis (Strike)", wiki: "Ausübungspreis",
+    short: "Der Aktienkurs, ab dem ein Call (darüber) oder Put (darunter) bei Fälligkeit bzw. beim Knock-out-Produkt einen inneren Wert hat.",
+    long: "Beim Optionsschein entscheidet der Basispreis über Chance und Risiko: Ein Basispreis weit über dem Kurs (Call) macht den Schein billig und stark gehebelt, aber die Aktie muss bis zur Fälligkeit weit steigen. Beim Knock-out-Produkt bestimmt der Abstand zwischen Kurs und Basispreis den Hebel.",
+  },
+  bezugsverhaeltnis: {
+    group: "Hebelprodukte", term: "Bezugsverhältnis", wiki: "Bezugsverhältnis",
+    short: "Auf wie viele Aktien sich ein Schein bezieht. 0,1 heißt: 10 Scheine entsprechen einer Aktie; der Schein bewegt sich dann um 10 Cent, wenn die Aktie um 1 € steigt (bei einem Hebel ohne Zeitwert).",
+    long: "Steht im Produktdatenblatt oft als „10:1“ (= 0,1) oder „100:1“ (= 0,01). Der Rechner versteht beide Schreibweisen. Das Bezugsverhältnis ändert nicht den Hebel, nur den Preis je Schein.",
+  },
+  implizite_volatilitaet: {
+    group: "Hebelprodukte", term: "Volatilität (historisch und implizit)", wiki: "Implizite Volatilität",
+    short: "Wie stark eine Aktie schwankt, als Prozent pro Jahr. Je höher, desto teurer der Optionsschein, weil große Kurssprünge wahrscheinlicher sind.",
+    long: "Die historische Volatilität misst die Schwankung der vergangenen Tage (der Rechner zeigt 1 Jahr und 3 Monate). Die implizite Volatilität ist die Schwankung, die im Preis eines Optionsscheins steckt; der Rechner bestimmt sie, wenn Sie den aktuellen Preis des Scheins eingeben. Ändert der Emittent die implizite Volatilität (etwa nach Quartalszahlen), ändert sich der Preis des Scheins auch bei gleichem Aktienkurs.",
+  },
+  omega: {
+    group: "Hebelprodukte", term: "Hebel (Omega)", wiki: "Griechen (Finanzmathematik)",
+    short: "Um wie viel Prozent sich das Produkt ungefähr bewegt, wenn die Aktie um 1 % steigt oder fällt. Hebel 8: Aktie +1 % → Produkt etwa +8 %, Aktie −1 % → etwa −8 %.",
+    long: "Der Hebel gilt nur für kleine Bewegungen und ändert sich laufend: Steigt die Aktie, sinkt beim Call der Hebel, fällt sie, steigt er – bis zum Knock-out oder Wertlosverfall. Beim Optionsschein heißt der tatsächliche Hebel Omega; er berücksichtigt, dass der Schein nicht jede Aktienbewegung voll mitmacht.",
+  },
+  zeitwert: {
+    group: "Hebelprodukte", term: "Zeitwert und Aufgeld", wiki: "Optionsschein",
+    short: "Der Teil des Preises über dem inneren Wert. Beim Optionsschein schmilzt er bis zur Fälligkeit auf null ab; beim Knock-out-Produkt ist er klein (Spanne und Finanzierungskosten).",
+    long: "Innerer Wert = (Aktienkurs − Basispreis) × Bezugsverhältnis beim Call, umgekehrt beim Put, mindestens null. Bewegt sich die Aktie nicht, verliert ein Optionsschein jeden Tag ein Stück seines Zeitwerts; der Rechner zeigt den Verlust pro Tag. Darum kann ein Call auch bei leicht gestiegener Aktie im Minus sein.",
+  },
+  spanne: {
+    group: "Hebelprodukte", term: "Spanne (Spread)", wiki: "Geld-Brief-Spanne",
+    short: "Abstand zwischen Brief (Kaufkurs) und Geld (Verkaufskurs) des Emittenten, in Prozent des Briefkurses. Um so viel liegt ein Produkt direkt nach dem Kauf im Minus.",
+    long: "Bei Hebelprodukten stellt der Emittent beide Kurse selbst. Je kleiner die Spanne, desto günstiger: 1 % Spanne kostet bei jedem Kauf und Verkauf zusammen etwa 1 % des Einsatzes. Billige, weit aus dem Geld liegende Scheine haben oft große Spannen, weil der Emittent in festen Cent-Schritten quotiert. Abends und am Wochenende stellen manche Emittenten keinen Briefkurs.",
+  },
+  preischeck: {
+    group: "Hebelprodukte", term: "Preis-Check (fairer Wert)", wiki: "Black-Scholes-Modell",
+    short: "Wie viel teurer (oder günstiger) ein Hebelprodukt ist als sein fairer Wert – ganz ohne Meinung über die Aktie. +10 % heißt: Sie zahlen 10 % mehr, als das Produkt nach der bisherigen Schwankung der Aktie wert ist.",
+    long: "Optionsschein: fairer Wert nach Black-Scholes mit der Schwankung der Aktie im letzten Jahr (einstellbar unter „Ihre Erwartung“). Liegt die implizite Volatilität des Scheins darüber, ist er teurer als fair; das ist bei Optionsscheinen üblich, weil die Emittenten daran verdienen und weil Puts weit unter dem Kurs als Absicherung gefragt sind. Unabhängig davon zeigt „ähnliche Scheine“, ob derselbe Schein bei anderen Emittenten billiger ist. Knock-out: fairer Wert ist der innere Wert; der Preis-Check zeigt, was Spanne und Aufgeld kosten. Bei Knock-outs mit Fälligkeit steckt der Zins bis dahin im Preis, fair ist dann der Terminwert: Ein Long kostet etwas mehr als den inneren Wert, ein Short etwas weniger. Bei hohem Hebel wirkt schon ein kleiner Unterschied stark.",
+  },
+  erwartung: {
+    group: "Hebelprodukte", term: "Ihre Erwartung (Durchschnitt, Gewinnchance, Knock-out-Risiko)", wiki: "Log-Normalverteilung",
+    short: "Sie sagen, wo die Aktie an einem Tag im Durchschnitt steht und wie stark sie schwankt. Der Rechner spielt alle dann möglichen Kurse durch: durchschnittliche Rendite des Produkts, Chance auf Gewinn, Risiko eines Verlusts über 50 % und beim Knock-out die Wahrscheinlichkeit, dass die Aktie die Schwelle unterwegs berührt.",
+    long: "Die Kurse am Tag sind lognormal verteilt, ihr Durchschnitt ist Ihr Kurs, ihre Breite die Schwankung (voreingestellt: wie im letzten Jahr). Mit „±0“ ist das die neutrale Sicht: Ein fair bepreistes Produkt kommt dann im Durchschnitt auf etwa 0 %, ein teures liegt darunter. Hebelprodukte mit viel Hebel haben oft eine hohe Durchschnittsrendite bei kleiner Gewinnchance: wenige große Gewinne, viele Verluste. Das Knock-out-Risiko gilt für den Weg bis zu Ihrem Tag; Kurslücken über Nacht sind darin nicht enthalten.",
+  },
+  spanne_aktie: {
+    group: "Hebelprodukte", term: "Spanne ÷ Hebel (Spanne auf die Aktie umgerechnet)", wiki: "Geld-Brief-Spanne",
+    short: "Die Spanne geteilt durch den Hebel: So viel Prozent muss sich die Aktie in die richtige Richtung bewegen, bis die Spanne wieder drin ist. Damit lassen sich Produkte mit verschiedenem Hebel fair vergleichen.",
+    long: "Ein Turbo mit Hebel 20 und 2 % Spanne kostet die Aktie 0,1 %, einer mit Hebel 5 und 1 % Spanne 0,2 % – der zweite ist trotz kleinerer Spanne teurer, gemessen an dem, was man an Aktienbewegung „kauft“. Andere Portale nennen das „homogenisierte Spanne“. Für die Kosten im Verhältnis zum Einsatz zählt dagegen die Spanne selbst.",
+  },
+  delta: {
+    group: "Hebelprodukte", term: "Delta", wiki: "Griechen (Finanzmathematik)",
+    short: "Um wie viel sich ein Optionsschein (je Aktie gerechnet) bewegt, wenn die Aktie um 1 Einheit steigt: beim Call zwischen 0 und 1, beim Put zwischen −1 und 0. Grob auch die Wahrscheinlichkeit, dass der Schein bei Fälligkeit im Geld liegt.",
+    long: "Ein Call mit Delta 0,5 und Bezugsverhältnis 0,1 steigt um 5 Cent, wenn die Aktie um 1 € steigt. Weit im Geld liegt Delta nahe 1 (der Schein bewegt sich fast wie die Aktie), weit aus dem Geld nahe 0. Omega (der Hebel) ist Delta mal Aktienkurs geteilt durch den Preis des Scheins.",
+  },
+  gewinnschwelle: {
+    group: "Hebelprodukte", term: "Gewinnschwelle (Break-even)", wiki: "Break-even",
+    short: "Um wie viel Prozent sich die Aktie bewegen muss, damit sich der Kauf lohnt. Beim Optionsschein bei Fälligkeit (Basispreis plus Preis je Aktie), beim Knock-out sofort.",
+    long: "Beim Optionsschein steckt im Preis der Zeitwert; bis zur Fälligkeit muss die Aktie ihn wieder hereinholen. Vorher kann der Schein schon bei einer kleineren Bewegung im Plus sein, weil er dann noch Zeitwert hat. Beim Knock-out liegt die Gewinnschwelle fast beim aktuellen Kurs; der Abstand zeigt, was Spanne und Aufgeld kosten.",
+  },
+  aehnliche: {
+    group: "Hebelprodukte", term: "vs. ähnliche Scheine (Emittentenvergleich)", wiki: "Implizite Volatilität",
+    short: "Wie teuer ein Optionsschein gegenüber Scheinen anderer Emittenten mit ähnlichem Basispreis (±7 %) und ähnlicher Laufzeit (±25 %) ist – gemessen an deren mittlerer impliziter Volatilität. Ganz ohne Annahme über die Aktie.",
+    long: "Der Preis-Check vergleicht mit der bisherigen Schwankung der Aktie; die liegt aber oft unter der Volatilität, die alle Emittenten verlangen (vor allem weit aus dem Geld: das „Vola-Lächeln“). „vs. ähnliche“ fragt deshalb: Ist dieser Schein günstiger oder teurer als der Markt für genau diese Art Schein? −5 % heißt: 5 % billiger als bei den anderen. Gerechnet wird mit mindestens drei ähnlichen Scheinen aus der geladenen Liste.",
+  },
+  quanto: {
+    group: "Hebelprodukte", term: "Quanto (währungsgesichert)", wiki: "Quanto",
+    short: "Hebelprodukt auf eine ausländische Aktie, das zum festen Kurs 1 Einheit = 1 € abrechnet. Der Wechselkurs spielt dann keine Rolle.",
+    long: "Bei einem normalen Call auf eine US-Aktie zählt der Gewinn in Dollar und wird zum aktuellen Kurs in Euro umgerechnet; fällt der Dollar, verliert der Schein. Ein Quanto-Produkt rechnet 1 Dollar als 1 Euro ab. Die Absicherung kostet etwas, sie steckt im Preis (beim Optionsschein) bzw. in den Finanzierungskosten (beim Knock-out).",
   },
 };
 

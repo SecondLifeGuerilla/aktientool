@@ -50,6 +50,21 @@ export function stability(x) {
   return isNum(x) ? nf(2, 2).format(x) : "–";
 }
 
+// Zahleneingabe deutsch oder englisch („1.234,5“, „1234.5“, „−5“); Bezugsverhältnis auch als „10:1“ (= 0,1)
+export function parseNum(s) {
+  let t = String(s ?? "").trim().replace(/\s/g, "").replace(/^[−–]/, "-");
+  if (!t) return null;
+  const ratio = t.match(/^([\d.,]+):([\d.,]+)$/);
+  if (ratio) {
+    const [a, b] = [parseNum(ratio[1]), parseNum(ratio[2])];
+    return a > 0 && b > 0 ? b / a : null;
+  }
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

@@ -1,13 +1,30 @@
 // Aktien-Profil: Qualität, Kurs, Scorecard, Bewertung, fairer Wert, Dividende, Jahreswerte, Fazit
-import { api, getWatchlist, toggleWatch } from "./api.js";
+import { api, getWatchlist } from "./api.js";
+import { backToList, browseBar, browseStep, wireBrowseBar } from "./browse.js";
+import { trLine } from "./broker.js";
 import * as C from "./charts.js";
+import { derivOverview } from "./derivlist.js";
 import * as F from "./format.js";
 import { term } from "./glossary.js";
+import { setPageKeys } from "./keys.js";
+import { isBasic } from "./mode.js";
+import { loadOutlook, outlookSection } from "./outlook.js";
+import { remember } from "./recent.js";
+import { toast } from "./toast.js";
+import { discText, freshness, per100, renderHistory, reportFreshness, reportOld, usualBadge } from "./trusts.js";
+import { flipWatch } from "./watch.js";
+import { getGroups, groupsOf, openAssign, pathLabel } from "./watchgroups.js";
 
+// „Auf einen Blick“ und „Scores & Nachrichten“ stehen vor der Abschnittsnavigation, die übrigen darunter in dieser Reihenfolge
 const SECTIONS = [
-  ["news", "Scores & Nachrichten"], ["quality", "Qualität"], ["signals", "Signale"], ["price", "Kursentwicklung"], ["scorecard", "Scorecard"],
-  ["valuation", "Bewertung"], ["fairvalue", "Fairer Wert"], ["dividend", "Dividende"], ["annual", "Jahreswerte"], ["verdict", "Fazit"],
+  ["verdict", "Auf einen Blick"], ["news", "Scores & Nachrichten"], ["outlook", "Zukunft"], ["quality", "Qualität"], ["business", "Geschäft"], ["signals", "Signale"],
+  ["price", "Kursentwicklung"], ["scorecard", "Scorecard"], ["valuation", "Bewertung"], ["fairvalue", "Fairer Wert"], ["dividend", "Dividende"],
+  ["annual", "Jahreswerte"], ["derivatives", "Hebelprodukte"], ["notes", "Notizen"],
 ];
+const TOP_SECTIONS = new Set(["verdict", "news"]);
+// Abschnitte, die es nur in der Profi-Ansicht gibt; die Basis-Ansicht zeigt auch in den übrigen nur das Wichtigste
+const ADVANCED_SECTIONS = new Set(["business", "signals", "valuation", "annual"]);
+const sections = () => SECTIONS.filter(([id]) => !(isBasic() && ADVANCED_SECTIONS.has(id)));
 const DAY = 86400000;
 const YEAR = 365.25 * DAY;
 const esc = F.escapeHtml;
@@ -19,6 +36,7 @@ const RELIABILITY_PHRASE = {
   "unzuverlässig": "eine unzuverlässige Gewinnentwicklung",
   "rückläufig": "eine rückläufige Gewinnentwicklung",
   "kaum beurteilbar": "eine wegen der kurzen Historie kaum beurteilbare Gewinnentwicklung",
+  "von Verlusten geprägt": "eine von Verlusten geprägte Gewinnentwicklung",
 };
 const GROWTH_PHRASE = {
   "dynamisches Gewinnwachstum": "einem dynamischen Wachstum",
@@ -57,22 +75,50 @@ function errorBlock(e, symbol) {
 const tile = (label, value, sub = "", cls = "") =>
   `<div class="tile ${cls}"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
 const badge = (r) => (r ? `<span class="badge ${r.status}">${esc(r.label)}</span>` : "–");
+// Beträge kommen vom Server in Euro (eur.py): Kurse zum Wechselkurs des jeweiligen Tages, Jahreswerte zum heutigen Kurs.
+// Ohne Wechselkurs (p.eur == null) bleibt alles in der Originalwährung.
+const foreign = (p) => Boolean(p.eur && p.eur.original_currency !== "EUR");
+const unitNote = (p, mode) => (!p.eur ? `in ${esc(p.currency || "")}` : !foreign(p) ? "in €"
+  : mode === "day" ? "in €, zum Wechselkurs des jeweiligen Tages" : "in €, zum heutigen Wechselkurs");
+// Pence & Co.: Wechselkurs je Hauptwährung zeigen (1 GBP = 1,19 € statt 1 GBp = 0,0119 €)
+const MINOR_UNITS = { GBp: ["GBP", 100], GBX: ["GBP", 100], ZAc: ["ZAR", 100], ILA: ["ILS", 100], KWF: ["KWD", 1000] };
+const fx1 = (p) => (MINOR_UNITS[p.eur.original_currency] || [p.eur.original_currency])[0];
+const fxRate = (p) => p.eur.rate * (MINOR_UNITS[p.eur.original_currency]?.[1] ?? 1);
 const year = (d) => d.slice(0, 4);
 
+// Tasten zum Blättern gelten schon während des Ladens, damit man zügig durch eine Liste gehen kann
+function browseKeys(symbol, extra = {}) {
+  setPageKeys({
+    ArrowLeft: () => browseStep(symbol, "prev"),
+    ArrowRight: () => browseStep(symbol, "next"),
+    b: () => backToList(symbol),
+    ...extra,
+  });
+}
+
 export async function renderProfile(root, symbol, isCurrent, refresh = false) {
-  root.innerHTML = loading(`Lade ${symbol} …`, "Beim ersten Aufruf werden Kurse, Bilanzdaten und Schätzungen geholt. Das dauert einige Sekunden.");
+  root.innerHTML = browseBar(symbol) + loading(`Lade ${symbol} …`, "Beim ersten Aufruf werden Kurse, Bilanzdaten und Schätzungen geholt. Das dauert einige Sekunden.");
+  wireBrowseBar(root, symbol);
+  browseKeys(symbol);
   let p;
   try {
     p = await api.profile(symbol, refresh);
   } catch (e) {
-    if (isCurrent()) root.innerHTML = errorBlock(e, symbol);
+    if (isCurrent()) {
+      root.innerHTML = browseBar(symbol) + errorBlock(e, symbol);
+      wireBrowseBar(root, symbol);
+    }
     return;
   }
   if (!isCurrent()) return;
   document.title = `${p.name} – Aktientool`;
+  remember(p.symbol, p.name);
   C.disposeAll();
-  root.innerHTML = [head(p), overview(), subnav(), quality(p), signals(p), price(p), scorecard(p), valuation(p), fairValue(p),
-    dividend(p), annual(p), verdict(p)].join("");
+  const build = { outlook: outlookSection, quality, business, signals, price, scorecard, valuation, fairvalue: fairValue, dividend, annual, derivatives, notes };
+  // bei Trusts und Holdings zählt der Abschlag zum inneren Wert mehr als KGV & Co.: deshalb vor „Auf einen Blick“
+  root.innerHTML = [browseBar(p.symbol), head(p), trustCard(p), glance(p), overview(), subnav(), ...sections().filter(([id]) => !TOP_SECTIONS.has(id)).map(([id]) => build[id](p))].join("");
+  wireBrowseBar(root, p.symbol);
+  loadOutlook(root, p, isCurrent);
   wire(root, p, isCurrent);
 }
 
@@ -84,46 +130,139 @@ function head(p) {
   const years = d.fundamental_years ? `Geschäftsjahre ${d.fundamental_years[0]}–${d.fundamental_years[1]}` : "keine Jahresabschlüsse";
   const age = F.isNum(d.age_seconds) ? (d.age_seconds < 120 ? "gerade eben" : `vor ${Math.round(d.age_seconds / 60)} Min.`) : "";
   const website = f.website ? `<a href="${esc(f.website)}" target="_blank" rel="noopener">${esc(f.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : "–";
+  const basic = isBasic();
+  // drittes Element true: nur in der Profi-Ansicht
   const facts = [
-    ["Land", esc(f.country || "–")], [term("sektor", "Sektor"), esc(f.sector || "–")], [term("branche", "Branche"), esc(f.industry || "–")],
-    ["Mitarbeiter", F.int(f.employees)], ["Webseite", website], [term("isin", "ISIN"), `<span id="fact-isin">${esc(f.isin || "–")}</span>`],
+    ["Land", esc(f.country || "–")], [term("sektor", "Sektor"), esc(f.sector || "–")], [term("branche", "Branche"), esc(f.industry || "–"), true],
+    ["Mitarbeiter", F.int(f.employees), true], ["Webseite", website, true], [term("isin", "ISIN"), `<span id="fact-isin">${esc(f.isin || "–")}</span>`, true],
     [term("boersenwert", "Börsenwert"), F.big(f.market_cap, ccy)], ["Aktienkurs", F.money(f.price, ccy)],
     [term("dividendenrendite", "Dividendenrendite"), F.pct(f.dividend_yield, 2)],
     ["Nächste Zahlen", f.earnings_date ? F.date(f.earnings_date) : "–"],
-  ].map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+  ].filter(([, , adv]) => !(basic && adv)).map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
   const warnings = d.warnings.map((w) => `<li class="warn">${esc(w)}</li>`).join("");
+  // Basis-Ansicht: Datenquelle und Ladezeit entfallen, Warnungen (z. B. kurze Historie) bleiben
+  const notice = basic ? (warnings ? `<div class="notice"><ul>${warnings}</ul></div>` : "") : `
+    <div class="notice">
+      Fundamentaldaten: <b>${esc(d.fundamentals_source)}</b> (${years}, ${term("bilanzwaehrung", "Bilanzwährung")} ${esc(d.financial_currency || "–")}) ·
+      ${foreign(p) || (p.eur && d.financial_currency && d.financial_currency !== "EUR") ? "alle Beträge in € umgerechnet (Kurse zum Tageskurs, Jahreswerte zum heutigen Kurs) ·" : ""}
+      Kurse seit ${F.date(d.price_start)} · letzter Kurs ${F.date(d.last_price_date)} · geladen ${age}
+      ${warnings ? `<ul>${warnings}</ul>` : ""}
+    </div>`;
   return `
   <section class="card">
     <div class="profile-head">
       <div>
         <h1>${esc(p.name)}</h1>
-        <div class="meta">${esc(p.symbol)} · ${esc(p.exchange || "")} · ${esc(ccy || "")}</div>
+        <div class="meta">${esc(p.symbol)} · ${esc(p.exchange || "")} · ${esc(p.eur?.original_currency || ccy || "")}</div>
+        <div class="tr-line" id="tr-line">${trLine(p.trade_republic, F.date)}</div>
         <div class="price">${F.money(f.price, ccy)} <small class="${(f.change ?? 0) >= 0 ? "good" : "bad"}">${F.signedPct(f.change, 2)}</small></div>
+        ${foreign(p) ? `<div class="muted price-orig">an der Börse ${F.money(p.eur.original_price, p.eur.original_currency)} · 1 ${esc(fx1(p))} = ${F.num(fxRate(p), 4)} €</div>`
+          : !p.eur ? '<div class="muted price-orig">Euro-Umrechnung gerade nicht möglich (kein Wechselkurs); Beträge in Originalwährung.</div>' : ""}
       </div>
       <div class="actions">
         <button class="btn" id="watch-btn" type="button">☆ Zur Watchlist</button>
+        <button class="btn" id="group-btn" type="button" hidden title="Watchlist-Gruppen dieser Aktie wählen">Gruppe wählen</button>
         <a class="btn" href="#/depot?neu=${encodeURIComponent(p.symbol)}" title="Position im Depot erfassen">＋ Depot</a>
         <a class="btn" href="#/alarme?neu=${encodeURIComponent(p.symbol)}" title="Kurs- oder Bewertungsalarm anlegen">🔔 Alarm</a>
-        <a class="btn" href="#/vergleich?s=${encodeURIComponent(p.symbol)}" title="Mit anderen Aktien vergleichen">⇄ Vergleichen</a>
+        ${basic ? "" : `<a class="btn" href="#/vergleich?s=${encodeURIComponent(p.symbol)}" title="Mit anderen Aktien vergleichen">⇄ Vergleichen</a>`}
+        <a class="btn" href="#/callput?s=${encodeURIComponent(p.symbol)}" title="Optionsschein oder Knock-out auf diese Aktie durchrechnen">Call/Put</a>
         <button class="btn" id="refresh-btn" type="button" title="Daten neu von Yahoo laden">↻ Aktualisieren</button>
       </div>
     </div>
     <dl class="facts">${facts}</dl>
-    <div class="notice">
-      Fundamentaldaten: <b>${esc(d.fundamentals_source)}</b> (${years}, ${term("bilanzwaehrung", "Bilanzwährung")} ${esc(d.financial_currency || "–")}) ·
-      Kurse seit ${F.date(d.price_start)} · letzter Kurs ${F.date(d.last_price_date)} · geladen ${age}
-      ${warnings ? `<ul>${warnings}</ul>` : ""}
+    ${notice}
+    <details class="about" id="about"${f.description ? "" : " hidden"}><summary>Was macht ${esc(p.name)}? <span class="muted" id="about-src">(Beschreibung von Yahoo, englisch)</span></summary>
+      <div id="about-text"><p>${esc(f.description || "")}</p></div></details>
+  </section>`;
+}
+
+// ---------------------------------------------------------------- Auf einen Blick: das Fazit direkt unter dem Kopf
+const RELIABILITY_STATUS = {
+  "äußerst zuverlässig": "good", "zuverlässig": "good", "schwankend": "warning", "unzuverlässig": "serious",
+  "rückläufig": "critical", "kaum beurteilbar": "neutral", "von Verlusten geprägt": "serious",
+};
+
+function glance(p) {
+  const s = p.summary;
+  const q = p.quality;
+  const v = p.valuation;
+  const per = v.available ? v.periods[v.default_period] : null;
+  const exp = v.expected?.by_period?.[v.default_period];
+  const uncertain = v.dip_now || v.short_history;
+  const rel = s.earnings.reliability;
+  const earnSub = q.loss_making ? `Verlust in ${q.losses} von ${q.count} Geschäftsjahren`
+    : [F.isNum(q.stability) ? `Stabilität ${F.stability(q.stability)}` : null,
+      F.isNum(q.growth) ? `Gewinn ${F.signedPct(q.growth, 1)} pro Jahr` : null].filter(Boolean).join(" · ") || "zu wenige Geschäftsjahre";
+  const expText = F.isNum(exp)
+    ? `<br>erwartete Rendite <span class="${uncertain ? "" : exp >= 0.08 ? "good" : exp < 0 ? "bad" : ""}">${F.signedPct(exp, 1)} pro Jahr</span>` : "";
+  const valSub = per ? `Kurs ${F.signedPct(per.deviation, 0)} vs. ${term("fairer_wert", "fairer Wert")} ${F.money(per.fair_value, p.currency)}${expText}`
+    : "kein fairer Wert berechenbar";
+  const cards = [...p.scorecard].sort((a, b) => b.score - a.score);
+  const best = cards[0];
+  const fit = best && best.score >= 6;
+  const mom = p.price.momentum;
+  const tiles = [
+    tile(term("gewinnstabilitaet", "Gewinnentwicklung"), badge(rel ? { label: rel, status: RELIABILITY_STATUS[rel] || "neutral" } : null), earnSub),
+    tile("Bewertung", badge(s.valuation || { label: "nicht bewertbar", status: "neutral" }), valSub),
+    tile(term("scorecard", "Passt am besten zu"), fit ? esc(best.label) : '<span class="muted">keiner Strategie</span>',
+      `Scores 1–10: ${cards.map((c) => `${esc(c.label)} <b>${c.score}</b>`).join(" · ")}`),
+    tile(term("momentum", "Stimmung"), badge(s.sentiment),
+      F.isNum(mom) ? `Kurs ${F.pct(Math.abs(mom), 1)} ${mom >= 0 ? "über" : "unter"} der 200-Tage-Linie` : "zu kurze Kurshistorie"),
+  ].join("");
+  return `
+  <section class="card glance" id="sec-verdict" style="margin-top:12px">
+    <div class="chart-title">
+      <h2 style="font-size:18px">Auf einen Blick</h2>
+      <a href="#/tutorial?pruefen=${encodeURIComponent(p.symbol)}">Kauf-Checkliste für diese Aktie →</a>
     </div>
-    ${f.description ? `<details class="about"><summary>Was macht ${esc(p.name)}? (Beschreibung von Yahoo, englisch)</summary><p>${esc(f.description)}</p></details>` : ""}
+    <p class="glance-text">${esc(s.text)}</p>
+    <div class="grid tiles">${tiles}</div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------- Trust oder Holding: Abschlag zum inneren Wert
+function trustCard(p) {
+  const t = p.trust;
+  if (!t || !F.isNum(t.disc)) return "";
+  const holding = t.kind === "holding";
+  const tiles = [
+    tile(term("abschlag_nav", "Kurs vs. innerer Wert"), `<b>${discText(t.disc)}</b>`,
+      `Kurs ${F.money(t.price_eur, "€")} · ${term("nav", "NAV")} ${F.money(t.nav_eur, "€")} je Aktie`),
+    holding
+      ? tile("Börsennotierte Beteiligungen", F.pct(t.listed_share, 0), "des Bruttovermögens zum aktuellen Kurs; der Rest zum Wert laut Bericht")
+      : tile(term("ueblicher_abschlag", "Üblicher Abschlag"),
+        F.isNum(t.disc_usual) ? `${F.signedPct(t.disc_usual, 1)} <small class="muted">Ø ${esc(t.usual_basis)}</small>` : "–",
+        usualBadge(t.disc, t.disc_usual) || "für diesen Fonds kein Durchschnitt verfügbar"),
+    holding
+      ? tile("NAV laut Bericht", F.money(t.nav_report_eur, "€"), "je Aktie, zum heutigen Wechselkurs")
+      : tile(term("laufende_kosten", "Kosten"), F.isNum(t.ocf) ? `${F.pct(t.ocf, 2)} p. a.` : "–",
+        [F.isNum(t.gearing) ? `${term("gearing", "Fremdkapital")} ${F.pct(t.gearing, 0)}` : "", esc(t.sector || t.group || "")].filter(Boolean).join(" · ")),
+    tile("Datenstand", holding ? reportFreshness(t.date) : freshness(t.date, 4, 10, "Schlusskurs und NAV vom"),
+      !holding ? "Schlusskurs und NAV, automatisch aktualisiert"
+        : reportOld(t.date) ? 'Bericht älter als drei Monate: neuere Zahlen unter <a href="#/trusts">Trusts & Holdings</a> eintragen'
+          : "Beteiligungen laut Bericht, Kurse aktuell"),
+  ].join("");
+  const top = t.top?.length ? ` Größte ${holding ? "Beteiligungen" : "Positionen"}: ${esc(t.top.join(", "))}.` : "";
+  return `
+  <section class="card glance trust-card" id="sec-trust" style="margin-top:12px">
+    <div class="chart-title">
+      <h2 style="font-size:18px">Innerer Wert (${holding ? "Holding" : "Trust"})</h2>
+      <a href="#/trusts">Alle Trusts & Holdings vergleichen →</a>
+    </div>
+    <p class="glance-text">${per100(t.disc)}${top} KGV, fairer Wert und Scorecard sagen bei ${holding ? "Holdings" : "Trusts"} wenig aus;
+      maßgeblich sind der Abschlag im Vergleich zum üblichen, die Kosten und die Wertentwicklung der Beteiligungen.</p>
+    <div class="grid tiles">${tiles}</div>
+    <div class="hist-slot" id="trust-hist" style="margin-top:14px"></div>
   </section>`;
 }
 
 // ---------------------------------------------------------------- Scores im Sektorvergleich und Nachrichten
+// viertes Element true: nur in der Profi-Ansicht
 const WORLD_SCORES = [
   ["score_total", "Gesamt", "score_gesamt"], ["score_quality", "Qualität", "score_qualitaet"],
   ["score_value", "Bewertung", "score_bewertung"], ["score_growth", "Wachstum", "score_wachstum"],
-  ["score_momentum", "Momentum", "score_momentum"], ["score_dividend", "Dividende", "score_dividende"],
-  ["magic_formula", "Magic Formula", "magic_formula"],
+  ["score_momentum", "Momentum", "score_momentum", true], ["score_dividend", "Dividende", "score_dividende"],
+  ["magic_formula", "Magic Formula", "magic_formula", true],
 ];
 
 function overview() {
@@ -148,15 +287,18 @@ async function loadWorld(root, p, isCurrent) {
   let w;
   try { w = await api.worldStock(p.symbol); } catch (e) { w = {}; }
   if (!isCurrent()) return;
+  loadDescription(root, p, w.isin, isCurrent);
   // Yahoo liefert die ISIN im Profil oft nicht (z. B. bei US-Aktien), der Screener der Weltauswahl schon
-  if (w.isin && !p.facts.isin) root.querySelector("#fact-isin").textContent = w.isin;
+  const isin = root.querySelector("#fact-isin"); // nicht in der Basis-Ansicht
+  if (w.isin && !p.facts.isin && isin) isin.textContent = w.isin;
   if (!w.symbol) {
     card.innerHTML = `<h2 style="font-size:18px">Scores im Sektorvergleich</h2>
       <p class="secondary">Diese Notierung ist nicht in der <a href="#/welt">Weltauswahl</a> enthalten (z. B. Börsenwert unter der Mindestgröße,
       eine Zweitnotierung oder die Weltauswahl ist noch nicht geladen). Scores gibt es nur dort.</p>`;
     return;
   }
-  const rows = WORLD_SCORES.filter(([k]) => F.isNum(w[k])).map(([k, label, t]) => `
+  const basic = isBasic();
+  const rows = WORLD_SCORES.filter(([k, , , adv]) => F.isNum(w[k]) && !(basic && adv)).map(([k, label, t]) => `
     <div class="ws-row"><span>${term(t, label)}</span>
       <span class="score-cell"><span class="score-bar" style="--w:${w[k]}%"></span><b>${F.int(w[k])}</b></span></div>`).join("");
   const themes = (w.themes || []).map((t) => `<a class="tag" href="#/welt?thema=${encodeURIComponent(t)}&ansicht=scores&sort=score_total">${esc(t)}</a>`).join("");
@@ -201,7 +343,7 @@ async function loadNews(root, p, isCurrent, lang) {
 }
 
 function subnav() {
-  return `<nav class="subnav" aria-label="Abschnitte">${SECTIONS.map(([id, label]) => `<button type="button" data-target="sec-${id}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="subnav" aria-label="Abschnitte">${sections().map(([id, label]) => `<button type="button" data-target="sec-${id}">${label}</button>`).join("")}</nav>`;
 }
 
 // ---------------------------------------------------------------- Qualität
@@ -210,7 +352,18 @@ function quality(p) {
   const s = p.summary.earnings;
   const otherLabel = q.basis === "eps_adj" ? "bilanzierten Gewinns" : "bereinigten Gewinns";
   const parts = [];
-  if (F.isNum(q.stability)) {
+  if (q.loss_making) {
+    const pts = q.points.slice(-q.count);
+    const [first, last] = [pts[0], pts[pts.length - 1]];
+    parts.push(`${esc(p.name)} hat in ${q.losses} von ${q.count} Geschäftsjahren (${year(q.start)}–${year(q.end)}) Verlust gemacht.
+      Eine ${term("gewinnstabilitaet", "Gewinnstabilität")} wird deshalb nicht berechnet: Die Trendlinie durch die Jahreswerte würde
+      auch schrumpfende Verluste als gleichmäßiges Wachstum werten.`);
+    if (first && last && last[0] !== first[0]) {
+      parts.push(`Der ${q.basis_label.replace("en Gewinn", "e Gewinn")} je Aktie hat sich von ${F.money(first[1], p.currency)} (${year(first[0])})
+        auf ${F.money(last[1], p.currency)} (${year(last[0])}) ${last[1] > first[1] ? "verbessert" : "verschlechtert"}.`);
+    }
+    if (!isBasic()) parts.push("Ob das Geschäft trotzdem vorankommt, zeigen Umsatz und Margen im Abschnitt Geschäft.");
+  } else if (F.isNum(q.stability)) {
     parts.push(`Die Gewinnstabilität von ${esc(p.name)} liegt bei ${F.stability(q.stability)} von max. 1,0, was auf ${RELIABILITY_PHRASE[s.reliability] || "eine unklare Gewinnentwicklung"} schließen lässt.
       Grundlage ist der ${q.basis_label.replace("en Gewinn", "e Gewinn")} der Geschäftsjahre ${year(q.start)}–${year(q.end)}.`);
     if (F.isNum(q.other_stability)) parts.push(`Die Stabilität des ${otherLabel} liegt bei ${F.stability(q.other_stability)}.`);
@@ -233,16 +386,17 @@ function quality(p) {
     <h2>Ist die ${esc(p.name)} Aktie ein gutes Investment?</h2>
     <p class="lead">Langfristig zählen Unternehmen mit zuverlässig steigenden Gewinnen. Nur dann steigen auch Kurse und Dividenden nachhaltig.</p>
     <div class="grid tiles">
-      ${tile(term("gewinnstabilitaet", "Gewinnstabilität"), F.stability(q.stability), `von max. 1,0${s.reliability ? ` · ${esc(s.reliability)}` : ""}`)}
+      ${tile(term("gewinnstabilitaet", "Gewinnstabilität"), F.stability(q.stability),
+        q.loss_making ? `nicht berechenbar · Verlust in ${q.losses} von ${q.count} Jahren` : `von max. 1,0${s.reliability ? ` · ${esc(s.reliability)}` : ""}`)}
       ${tile(term("wachstum_pa", `Gewinnwachstum (${Math.round(q.years || 0)} J.)`), F.pct(q.growth, 2), "pro Jahr")}
       ${tile(term("gewinnwachstum_erwartet", "Erwartung lfd. Geschäftsjahr"), F.signedPct(q.forecast_growth, 1), "Analystenschätzung (Gewinn)")}
     </div>
     <p style="margin-top:14px;max-width:900px">${parts.join(" ")}</p>
     <div class="card">
-      <div class="chart-title"><h3>Gewinn je Aktie (${esc(q.basis_label.replace("en Gewinn", "er Gewinn"))})</h3><span class="muted">in ${esc(p.currency)} · Prognose aus Analystenschätzungen</span></div>
+      <div class="chart-title"><h3>Gewinn je Aktie (${esc(q.basis_label.replace("en Gewinn", "er Gewinn"))})</h3><span class="muted">${unitNote(p, "now")} · Prognose aus Analystenschätzungen</span></div>
       <div class="chart" id="ch-eps"></div>
     </div>
-    ${qualityExtra(p)}
+    ${isBasic() ? "" : qualityExtra(p)}
   </section>`;
 }
 
@@ -271,6 +425,236 @@ function qualityExtra(p) {
     ${tests}`;
 }
 
+// ---------------------------------------------------------------- Geschäft: Umsatz, Margen, Finanzkraft (nur Profi)
+// Beträge in Bilanzwährung, damit Wachstumsraten nicht von Wechselkursen abhängen
+const MARGINS = [
+  ["gross_margin", "Bruttomarge", "bruttomarge"], ["operating_margin", "Operative Marge", "operative_marge"],
+  ["net_margin", "Nettomarge", "nettomarge"], ["fcf_margin", "Free-Cashflow-Marge", "fcf_marge"],
+];
+const latestWith = (rows, key) => [...rows].reverse().find((r) => F.isNum(r[key]));
+
+function business(p) {
+  const b = p.business;
+  const head = `<h2>Wie entwickelt sich das Geschäft von ${esc(p.name)}?</h2>`;
+  if (!b?.years?.length) {
+    return `<section class="section" id="sec-business">${head}<p class="muted">Für ${esc(p.name)} liegen keine Umsatzdaten vor.</p></section>`;
+  }
+  const ccy = b.currency || "";
+  const ys = b.years;
+  const last = ys[ys.length - 1];
+  const tr = b.revenue_trend;
+  const e0 = b.estimates.find((e) => e.key === "0y");
+  // Die letzten 12 Monate nur zeigen, wenn sie vom Geschäftsjahr abweichen (Halbjahresberichter liefern oft dasselbe)
+  const ttmNew = F.isNum(b.ttm.revenue) && F.isNum(last.revenue) && Math.abs(b.ttm.revenue / last.revenue - 1) > 0.005;
+  const revenueTiles = [
+    tile(`Umsatz ${year(last.end)}`, F.big(last.revenue, ccy), F.isNum(last.growth) ? `${F.signedPct(last.growth, 1)} gegenüber Vorjahr` : "kein Vorjahreswert"),
+    tile(term("wachstum_pa", `Umsatzwachstum (${Math.round(tr.years || 0)} J.)`), F.signedPct(tr.growth, 1),
+      F.isNum(tr.growth) ? `pro Jahr · Stabilität ${F.stability(tr.stability)}${tr.years < 4.8 ? " · kurze Historie" : ""}` : "zu wenige Jahreswerte"),
+    ttmNew ? tile("Umsatz letzte 12 Monate", F.big(b.ttm.revenue, ccy), `Geschäftsjahr ${year(last.end)}: ${F.big(last.revenue, ccy)}`) : "",
+    e0 && F.isNum(e0.revenue_growth) ? tile(term("umsatzerwartung", `Erwartung ${e0.year ?? "lfd. GJ"}`), F.signedPct(e0.revenue_growth, 1),
+      `${F.big(e0.revenue, ccy)} · ${F.int(e0.revenue_analysts)} Analysten`) : "",
+  ].join("");
+
+  const marginTile = ([key, label, t]) => {
+    const r = latestWith(ys, key);
+    if (!r) return "";
+    const before = latestWith(ys.filter((x) => x.end < r.end), key);
+    const ttm = ttmNew && F.isNum(b.ttm[key]) ? ` · 12 Monate ${F.pct(b.ttm[key], 1)}` : "";
+    return tile(term(t, label), F.pct(r[key], 1), `${year(r.end)}${before ? ` · Vorjahr ${F.pct(before[key], 1)}` : ""}${ttm}`);
+  };
+  const rnd = latestWith(ys, "rnd_ratio");
+  const marginTiles = [...MARGINS.map(marginTile),
+    rnd ? tile(term("fe_quote", "F&E-Quote"), F.pct(rnd.rnd_ratio, 1), `Forschung und Entwicklung ÷ Umsatz · ${year(rnd.end)}`) : ""].join("");
+
+  const bal = b.balance;
+  const h = b.holders || {};
+  const strengthTiles = [
+    F.isNum(bal.net_cash) ? tile(term("nettoliquiditaet", bal.net_cash >= 0 ? "Nettoliquidität" : "Nettoverschuldung"), F.big(Math.abs(bal.net_cash), ccy),
+      `Kasse ${F.big(bal.cash, ccy)} · Schulden ${F.big(bal.debt, ccy)}`) : "",
+    F.isNum(bal.equity_ratio) ? tile(term("eigenkapitalquote", "Eigenkapitalquote"), F.pct(bal.equity_ratio, 0),
+      `Eigenkapital ${F.big(bal.equity, ccy)} · Bilanz ${year(bal.date)}`) : "",
+    F.isNum(bal.runway_years)
+      ? tile(term("cash_reichweite", "Cash-Reichweite"), `<span class="${bal.runway_years < 2 ? "bad" : ""}">${F.num(bal.runway_years, 1)} Jahre</span>`,
+        `Free Cashflow 12 Monate: ${F.big(bal.fcf_ttm, ccy)}`)
+      : F.isNum(bal.fcf_ttm) ? tile(term("free_cashflow", "Free Cashflow (12 Monate)"), F.big(bal.fcf_ttm, ccy),
+        bal.fcf_ttm >= 0 ? "positiv: das Geschäft finanziert sich selbst" : "negativ") : "",
+    F.isNum(h.insiders) || F.isNum(h.institutions) ? tile(term("aktionaersstruktur", "Aktionärsstruktur"), `${F.pct(h.insiders, 0)} <small class="muted">Insider</small>`,
+      `${F.pct(h.institutions, 0)} institutionelle Anleger${F.isNum(h.institutions_count) ? ` (${F.int(h.institutions_count)})` : ""}`) : "",
+  ].join("");
+
+  const shortMargins = ys.filter((r) => F.isNum(r.gross_margin) || F.isNum(r.operating_margin)).length < ys.filter((r) => F.isNum(r.net_margin)).length;
+  const clipped = MARGINS.some(([k]) => ys.some((r) => r[k] < -1));
+  const marginNotes = [shortMargins ? "Brutto- und operative Marge nur für die Jahre mit Yahoo-Abschlüssen (rund 4 Jahre)." : "",
+    clipped ? "Werte unter −100 % sind abgeschnitten (Tabelle unten)." : ""].filter(Boolean).join(" ");
+  return `
+  <section class="section" id="sec-business">
+    ${head}
+    <p class="lead">Wächst der Umsatz, und bleibt davon etwas übrig? Umsatz, Margen und Finanzkraft zeigen, wie gesund das Geschäft ist.
+      Bei jungen Wachstumsfirmen mit Verlusten sagen sie mehr als die Gewinnstabilität.</p>
+    <div class="grid tiles">${revenueTiles}</div>
+    <p style="margin-top:14px;max-width:900px">${businessText(p)}</p>
+    <div class="grid two">
+      <div class="card">
+        <div class="chart-title"><h3>Umsatz und Nettoergebnis</h3><span class="muted">${p.eur && ccy === "EUR" && p.data.financial_currency && p.data.financial_currency !== "EUR"
+          ? `in €, aus ${esc(p.data.financial_currency)} (${term("bilanzwaehrung", "Bilanzwährung")}) zum heutigen Wechselkurs` : `in ${esc(ccy === "EUR" ? "€" : ccy)} (${term("bilanzwaehrung", "Bilanzwährung")})`}</span></div>
+        <div class="chart small" id="ch-revenue"></div>
+      </div>
+      <div class="card">
+        <div class="chart-title"><h3>Margen</h3><span class="muted">in % vom Umsatz</span></div>
+        <div class="chart small" id="ch-margins"></div>
+        ${marginNotes ? `<p class="muted" style="font-size:13px;margin:8px 0 0">${marginNotes}</p>` : ""}
+      </div>
+    </div>
+    <details class="table-view"><summary>Alle Jahreswerte als Tabelle</summary>${businessTable(b)}</details>
+    ${marginTiles ? `<h3 style="margin:18px 0 8px">Margen</h3><div class="grid tiles">${marginTiles}</div>` : ""}
+    ${strengthTiles ? `<h3 style="margin:18px 0 8px">Finanzkraft und Aktionäre</h3><div class="grid tiles">${strengthTiles}</div>` : ""}
+    ${estimatesCard(b, p)}
+  </section>`;
+}
+
+function businessTable(b) {
+  const ccy = b.currency || "";
+  const rows = [...b.years].reverse().map((r) => `<tr><td>${F.date(r.end)}</td><td>${F.big(r.revenue, ccy)}</td><td>${F.signedPct(r.growth, 1)}</td>
+      ${MARGINS.map(([k]) => `<td>${F.pct(r[k], 1)}</td>`).join("")}<td>${F.pct(r.rnd_ratio, 1)}</td><td>${F.big(r.net_income, ccy)}</td></tr>`).join("");
+  return `<div class="table-wrap"><table class="data"><thead><tr><th>Geschäftsjahr bis</th><th>Umsatz</th><th>Wachstum</th>
+    ${MARGINS.map(([, label]) => `<th>${label}</th>`).join("")}<th>F&amp;E-Quote</th><th>Nettoergebnis</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function estimatesCard(b, p) {
+  const ests = b.estimates.filter((e) => F.isNum(e.revenue) || F.isNum(e.eps));
+  if (!ests.length) return "";
+  const ccy = b.currency || "";
+  const range = (lo, hi, fmt) => (F.isNum(lo) && F.isNum(hi) ? `${fmt(lo)} – ${fmt(hi)}` : "–");
+  const rows = ests.map((e) => {
+    const eccy = e.eps_currency || ccy;
+    return `<tr><td>${e.year ?? (e.key === "0y" ? "laufendes" : "nächstes")}</td>
+      <td>${F.big(e.revenue, ccy)}</td><td>${F.signedPct(e.revenue_growth, 1)}</td><td>${range(e.revenue_low, e.revenue_high, (x) => F.big(x, ""))}</td>
+      <td class="${e.eps > 0 ? "" : F.isNum(e.eps) ? "bad" : ""}">${F.money(e.eps, eccy)}</td><td>${range(e.eps_low, e.eps_high, (x) => F.money(x, ""))}</td>
+      <td>${F.int(e.revenue_analysts ?? e.eps_analysts)}${F.isNum(e.eps_analysts) && e.eps_analysts !== e.revenue_analysts ? ` / ${F.int(e.eps_analysts)}` : ""}</td></tr>`;
+  }).join("");
+  return `
+    <div class="card table-scroll" style="margin-top:12px">
+      <div class="chart-title"><h3>${term("umsatzerwartung", "Analystenschätzungen")}</h3><span class="muted">Durchschnitt und Spanne der Schätzungen (Yahoo)</span></div>
+      <table class="data" style="margin-top:8px"><thead><tr><th>Geschäftsjahr</th><th>Umsatz</th><th>Wachstum</th><th>Spanne Umsatz</th>
+        <th>Gewinn je Aktie</th><th>Spanne Gewinn</th><th>Analysten</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted" style="font-size:13px;margin:8px 0 0">Analysten: Zahl der Umsatzschätzungen${ests.some((e) => F.isNum(e.eps_analysts) && e.eps_analysts !== e.revenue_analysts) ? " / Gewinnschätzungen" : ""}.
+        Gewinn je Aktie ${ests[0].eps_currency === "EUR" ? "in €" : `in der Währung der Schätzung${ests[0].eps_currency && ests[0].eps_currency !== ccy ? ` (${esc(ests[0].eps_currency)})` : ""}`}, so wie die Analysten ihn rechnen (oft bereinigt).</p>
+    </div>`;
+}
+
+// Fließtext: Umsatztrend, Erwartung, bei Verlusten der Weg zur Gewinnschwelle und die Finanzierung
+function businessText(p) {
+  const b = p.business;
+  const ccy = b.currency || "";
+  const ys = b.years.filter((r) => F.isNum(r.revenue));
+  const nm = esc(p.name);
+  const parts = [];
+  if (ys.length >= 2) {
+    const [a, z] = [ys[0], ys[ys.length - 1]];
+    parts.push(`Der Umsatz von ${nm} hat sich von ${F.big(a.revenue, ccy)} (${year(a.end)}) auf ${F.big(z.revenue, ccy)} (${year(z.end)})
+      ${z.revenue >= a.revenue ? "erhöht" : "verringert"}${F.isNum(b.revenue_trend.growth) ? `, im Schnitt um ${F.signedPct(b.revenue_trend.growth, 1)} pro Jahr` : ""}.`);
+  }
+  const ests = b.estimates.filter((e) => F.isNum(e.revenue_growth));
+  if (ests.length) {
+    parts.push(`Analysten erwarten einen Umsatz von ${ests.map((e) => `${F.big(e.revenue, ccy)} für ${e.year ?? "das laufende Geschäftsjahr"} (${F.signedPct(e.revenue_growth, 1)})`).join(" und ")}.`);
+  }
+  const last = b.years[b.years.length - 1];
+  if (b.loss_years && F.isNum(last.net_income) && last.net_income <= 0) {
+    parts.push(`Unterm Strich schreibt ${nm} Verluste (in ${b.loss_years} von ${b.profit_years} Geschäftsjahren).`);
+    const nets = b.years.filter((r) => F.isNum(r.net_margin));
+    if (nets.length >= 2) {
+      const [prev, cur] = [nets[nets.length - 2], nets[nets.length - 1]];
+      const better = cur.net_margin > prev.net_margin;
+      const why = !better ? "" : cur.net_income > prev.net_income
+        ? `: Der Verlust ist von ${F.big(prev.net_income, ccy)} auf ${F.big(cur.net_income, ccy)} gesunken` : ": Die Verluste wachsen langsamer als der Umsatz";
+      parts.push(`Die Nettomarge hat sich von ${F.pct(prev.net_margin, 0)} (${year(prev.end)}) auf ${F.pct(cur.net_margin, 0)} (${year(cur.end)})
+        ${better ? "verbessert" : "verschlechtert"}${why}.`);
+    }
+    const eps = b.estimates.filter((e) => F.isNum(e.eps));
+    const profit = eps.find((e) => e.eps > 0);
+    const eccy = eps[0]?.eps_currency || ccy;
+    if (profit) {
+      const loss0 = eps.find((e) => e.key === "0y" && e.eps <= 0);
+      const n = profit.eps_analysts;
+      const who = [F.isNum(n) ? `${n < 4 ? "nur " : ""}${n === 1 ? "1 Analyst" : `${F.int(n)} Analysten`}` : null,
+        F.isNum(profit.eps_low) ? `Spanne ${F.money(profit.eps_low, "")} bis ${F.money(profit.eps_high, eccy)}` : null].filter(Boolean).join(", ");
+      const gain = `einen Gewinn von ${F.money(profit.eps, eccy)} je Aktie${who ? ` (${who})` : ""}`;
+      parts.push(loss0 ? `Für ${loss0.year} erwarten Analysten noch einen Verlust von ${F.money(loss0.eps, eccy)} je Aktie, für ${profit.year} dann ${gain}.`
+        : `Für ${profit.year} erwarten Analysten ${gain}.`);
+    } else if (eps.length) {
+      parts.push(`Auch für ${eps[eps.length - 1].year ?? "die nächsten Jahre"} erwarten Analysten noch keinen Gewinn.`);
+    }
+  }
+  const bal = b.balance;
+  if (F.isNum(bal.runway_years)) {
+    const sh = p.fundamentals?.shares;
+    parts.push(`Die Kasse von ${F.big(bal.cash, ccy)} reicht beim Mittelabfluss der letzten 12 Monate (Free Cashflow ${F.big(bal.fcf_ttm, ccy)})
+      rechnerisch noch rund ${F.num(bal.runway_years, 1)} Jahre. Danach braucht es neues Geld, etwa durch Kredite oder Kapitalerhöhungen.${
+      F.isNum(sh?.cagr) && sh.cagr > 0.005 ? ` Die Aktienzahl ist zuletzt bereits um ${F.pct(sh.cagr, 1)} pro Jahr gestiegen (Verwässerung).` : ""}`);
+  }
+  return parts.join(" ");
+}
+
+function revenueChart(el, p) {
+  const b = p.business;
+  const ys = b.years;
+  const fc = b.estimates.filter((e) => F.isNum(e.revenue) && e.year && (!ys.length || e.year > Number(year(ys[ys.length - 1].end))));
+  const cats = [...ys.map((r) => year(r.end)), ...fc.map((e) => `${e.year}e`)];
+  const ccy = b.currency || "";
+  const radius = (v) => (v >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]);
+  const growth = [...ys.map((r) => r.growth), ...fc.map((e) => e.revenue_growth)];
+  const range = [...ys.map(() => null), ...fc.map((e) => (F.isNum(e.revenue_low) ? [e.revenue_low, e.revenue_high, e.revenue_analysts] : null))];
+  C.mount(el, (t) => ({
+    ...C.base(t),
+    legend: { ...C.base(t).legend, data: ["Umsatz", "Prognose", "Nettoergebnis"] },
+    tooltip: {
+      ...C.base(t).tooltip, axisPointer: { type: "shadow", shadowStyle: { color: "rgba(127,127,127,0.08)" } },
+      formatter: (params) => {
+        const i = params[0]?.dataIndex;
+        const rows = params.filter((x) => x.value != null).map((x) => `<div style="display:flex;gap:12px;justify-content:space-between">
+          <span>${x.marker}${esc(x.seriesName)}</span><b>${F.big(x.value, ccy)}</b></div>`);
+        if (F.isNum(growth[i])) rows.push(`<div style="opacity:.7">Umsatz ${F.signedPct(growth[i], 1)} gegenüber Vorjahr</div>`);
+        if (range[i]) rows.push(`<div style="opacity:.7">Spanne ${F.big(range[i][0], "")} – ${F.big(range[i][1], ccy)} · ${F.int(range[i][2])} Analysten</div>`);
+        return `<div style="min-width:200px"><div style="margin-bottom:4px;opacity:.7">${esc(cats[i] ?? "")}</div>${rows.join("")}</div>`;
+      },
+    },
+    xAxis: C.categoryAxis(t, cats),
+    yAxis: C.valueAxis(t, { scale: false }),
+    series: [
+      { name: "Umsatz", type: "bar", stack: "rev", barMaxWidth: 22, itemStyle: { color: t.series[0], borderRadius: [4, 4, 0, 0] },
+        data: [...ys.map((r) => r.revenue), ...fc.map(() => null)] },
+      { name: "Prognose", type: "bar", stack: "rev", barMaxWidth: 22, itemStyle: { color: t.series[0], opacity: 0.4, borderRadius: [4, 4, 0, 0] },
+        data: [...ys.map(() => null), ...fc.map((e) => e.revenue)] },
+      { name: "Nettoergebnis", type: "bar", barMaxWidth: 22, itemStyle: { color: t.series[1] },
+        data: [...ys.map((r) => (F.isNum(r.net_income) ? { value: r.net_income, itemStyle: { borderRadius: radius(r.net_income) } } : null)), ...fc.map(() => null)] },
+    ],
+  }));
+}
+
+function marginChart(el, p) {
+  const ys = p.business.years;
+  const cats = ys.map((r) => year(r.end));
+  const keys = MARGINS.filter(([k]) => ys.some((r) => F.isNum(r[k])));
+  const values = keys.flatMap(([k]) => ys.map((r) => r[k]).filter(F.isNum));
+  // Anlaufjahre junger Firmen (−500 %) würden die übrigen Werte plattdrücken: Achse höchstens bis −100 %.
+  // Feste Schrittweite, damit Grenzen und Teilstriche zusammenfallen (sonst überlappen die Beschriftungen)
+  const [min, max] = [Math.max(-1, Math.min(0, ...values)), Math.max(0, ...values)];
+  const step = max - min > 1.2 ? 0.25 : max - min > 0.6 ? 0.2 : max - min > 0.3 ? 0.1 : 0.05;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  C.mount(el, (t) => ({
+    ...C.base(t),
+    legend: { ...C.base(t).legend, data: keys.map(([, label]) => label) },
+    tooltip: { ...C.base(t).tooltip, valueFormatter: (v) => (v == null ? "–" : F.pct(v, 1)) },
+    xAxis: C.categoryAxis(t, cats),
+    yAxis: C.valueAxis(t, { scale: false, min: lo, max: hi, interval: step, axisLabel: { color: t.muted, formatter: (v) => `${F.num(v * 100, 0)} %` } }),
+    series: keys.map(([k, label], i) => C.line(label, ys.map((r) => (F.isNum(r[k]) ? r[k] : null)), t.series[i], {
+      showSymbol: true, symbolSize: 6, connectNulls: true,
+      markLine: i === 0 && lo < 0 ? { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: t.baseline, type: "solid", width: 1 }, data: [{ yAxis: 0 }] } : undefined,
+    })),
+  }));
+}
+
 // ---------------------------------------------------------------- Signale: Analysten, Insider, Leerverkäufer
 function signals(p) {
   const a = p.analysts;
@@ -287,7 +671,7 @@ function signals(p) {
   const insSummary = ins?.summary?.buys || ins?.summary?.sales ? `Letzte 6 Monate: ${F.int(ins.summary.buys?.count ?? 0)} Käufe
       (${F.int(ins.summary.buys?.shares ?? 0)} Aktien), ${F.int(ins.summary.sales?.count ?? 0)} Verkäufe (${F.int(ins.summary.sales?.shares ?? 0)} Aktien).` : "";
   const insRows = (ins?.transactions || []).map((t) => `<tr><td>${F.date(t.date)}</td><td style="text-align:left">${esc(t.insider)}<div class="muted" style="font-size:12px">${esc(t.position)}</div></td>
-      <td style="text-align:left;white-space:normal">${esc(t.text || "–")}</td><td>${F.int(t.shares)}</td><td>${F.big(t.value, "USD")}</td></tr>`).join("");
+      <td style="text-align:left;white-space:normal">${esc(t.text || "–")}</td><td>${F.int(t.shares)}</td><td>${F.big(t.value, p.eur ? "EUR" : "USD")}</td></tr>`).join("");
   const sp = p.shorts;
   const shortBlock = sp ? `<p style="margin-top:8px">Gemeldete Netto-Leerverkaufspositionen: <b>${F.pct(sp.total, 2)}</b> der Aktien
       (${F.int(sp.active)} Positionen ab 0,5 %).${sp.total >= 0.05 ? " Das ist viel: Große Investoren setzen auf fallende Kurse." : ""}</p>
@@ -374,11 +758,14 @@ function price(p) {
         </div>
         <label class="check"><input type="checkbox" id="log-toggle"> Logarithmische Skala</label>
         <span class="spacer"></span>
-        <span class="muted" style="font-size:13px">Linien per Klick in der Legende ein- und ausblenden</span>
+        <span class="muted" style="font-size:13px">${unitNote(p, "day")} · Linien per Klick in der Legende ein- und ausblenden</span>
       </div>
       <div class="chart" id="ch-price"></div>
+      ${foreign(p) && p.eur.history_start && pr.series.length && pr.series[0][0] < p.eur.history_start
+        ? `<p class="muted" style="font-size:13px;margin:8px 0 0">Tägliche Wechselkurse ${esc(fx1(p))}/€ gibt es erst ab ${F.date(p.eur.history_start)};
+          davor rechnet das Tool mit dem ersten bekannten Kurs.</p>` : ""}
     </div>
-    <div class="grid two" style="margin-top:12px">
+    ${isBasic() ? "" : `<div class="grid two" style="margin-top:12px">
       <div class="card table-scroll">
         <h3>Kursentwicklung nach Haltedauer</h3>
         <table class="data" style="margin-top:8px">
@@ -392,12 +779,14 @@ function price(p) {
           ? `Aktuell notiert der Kurs ${F.pct(Math.abs(mom), 1)} ${mom >= 0 ? "über" : "unter"} der 200-Tage-Linie, was auf eine ${esc(mood ? `${mood.label}e` : "")} Stimmung gegenüber der Aktie hindeutet.`
           : "Für die 200-Tage-Linie ist die Kurshistorie zu kurz."}</p>
         <p>${mood ? badge(mood) : ""}</p>
+        ${foreign(p) ? `<p class="muted" style="font-size:13px">Die 200-Tage-Linie und das Momentum rechnet das Tool in der Börsenwährung
+          (${esc(fx1(p))}), wie in der Weltauswahl; Wechselkursschwankungen verzerren die Stimmung so nicht.</p>` : ""}
         ${F.isNum(pr.momentum_12_1) ? `<p class="secondary">${term("momentum_12_1", "Momentum 12-1")}: Kursentwicklung der letzten 12 Monate ohne den
           jüngsten Monat ${F.signedPct(pr.momentum_12_1, 1)}. In der Forschung gehören Aktien mit hohem 12-1-Momentum im Schnitt auch in den
           folgenden Monaten zu den Gewinnern.</p>` : ""}
         <p class="secondary">${athText}</p>
       </div>
-    </div>
+    </div>`}
   </section>`;
 }
 
@@ -488,6 +877,7 @@ const CRIT_TERMS = {
 const SUITABILITY = (s) => (s >= 9 ? "sehr gut" : s >= 7 ? "gut" : s >= 5 ? "eher mäßig" : s >= 3 ? "wenig" : "nicht");
 
 function critValue(c, p) {
+  if (c.key === "earnings_stability" && p.quality.loss_making) return "Verluste";
   if (c.value == null) {
     if (c.key === "debt_years" && p.debt.infinite) return "∞";
     return "n. a.";
@@ -513,8 +903,9 @@ function critEnds(c) {
 }
 
 function scorecard(p) {
+  const basic = isBasic();
   const cards = p.scorecard.map((s) => {
-    const crits = s.criteria.map((c) => {
+    const crits = basic ? "" : s.criteria.map((c) => {
       const [lo, hi] = critEnds(c);
       // kurze Historie: der Balken zeigt, was in den Score eingeht (höchstens die Mitte)
       const n = c.short && c.norm != null ? Math.min(c.norm, 0.5) : c.norm;
@@ -540,8 +931,9 @@ function scorecard(p) {
   return `
   <section class="section" id="sec-scorecard">
     <h2>Eignet sich die ${esc(p.name)} Aktie für Ihre Anlagestrategie? <small class="muted">${term("scorecard", "Was ist das?")}</small></h2>
-    <p class="lead">Nicht jede Qualitätsaktie passt zu jeder Strategie. Die Balken zeigen, wo die Aktie bei jedem Kriterium innerhalb der Bandbreite liegt;
-      das mit „!“ markierte Kernkriterium bremst den Score, wenn es schwach ausfällt.</p>
+    <p class="lead">${basic ? "Nicht jede Qualitätsaktie passt zu jeder Strategie. Je höher der Score (1–10), desto besser passt die Aktie."
+      : `Nicht jede Qualitätsaktie passt zu jeder Strategie. Die Balken zeigen, wo die Aktie bei jedem Kriterium innerhalb der Bandbreite liegt;
+      das mit „!“ markierte Kernkriterium bremst den Score, wenn es schwach ausfällt.`}</p>
     <div class="grid three">${cards}</div>
   </section>`;
 }
@@ -575,7 +967,8 @@ function valuation(p) {
   const v = p.valuation;
   const tiles = v.stabilities.map((s) =>
     tile(term(STABILITY_TERMS[s.key], esc(s.label)), F.stability(s.stability),
-      [s.years ? `Stabilität · ${Math.round(s.years)} Jahre` : "zu wenige Daten", s.issue && s.years ? `<span class="tile-issue">${esc(s.issue)}</span>` : ""]
+      [s.losses ? "überwiegend negativ, keine Stabilität" : s.years ? `Stabilität · ${Math.round(s.years)} Jahre` : "zu wenige Daten",
+        s.issue && s.years ? `<span class="tile-issue">${esc(s.issue)}</span>` : ""]
         .filter(Boolean).join("<br>"),
       v.available && s.key === v.metric_key ? "highlight" : "")).join("");
   if (!v.available) {
@@ -739,15 +1132,16 @@ function fairValue(p) {
   if (!v.available) {
     return `<section class="section" id="sec-fairvalue"><h2>Wie hoch ist der faire Wert der ${esc(p.name)} Aktie?</h2>
       <p class="lead">Für ${esc(p.name)} lässt sich kein verlässlicher ${term("fairer_wert", "fairer Wert")} berechnen: Weder Gewinn noch
-        operativer Cashflow waren über die letzten Jahre überwiegend positiv (Einzelheiten im Abschnitt Bewertung).
+        operativer Cashflow waren über die letzten Jahre überwiegend positiv${isBasic() ? "" : " (Einzelheiten im Abschnitt Bewertung)"}.
         Ein Durchschnitts-KGV aus wenigen Gewinnmonaten wäre keine tragfähige Grundlage.</p>
       ${F.isNum(p.analysts.target_mean) ? `<div class="grid tiles">${tile(term("kursziel", "Analysten-Kursziel"), F.money(p.analysts.target_mean, p.currency),
         `${F.signedPct(p.analysts.upside, 1)} · ${F.int(p.analysts.count)} Analysten`)}</div>` : ""}
-      ${dcfCard(p)}
+      ${isBasic() ? "" : dcfCard(p)}
     </section>`;
   }
   // Zeiträume ohne zusätzliche Daten bleiben sichtbar, aber gesperrt
   const covered = Math.max(...Object.values(v.periods).filter(Boolean).map((x) => x.covered_years));
+  const basic = isBasic();
   const buttons = ["3", "5", "10"].map((k) => (v.periods[k]
     ? `<button type="button" data-period="${k}">${k} Jahre</button>`
     : `<button type="button" disabled aria-disabled="true" title="Die Daten reichen nur ${F.num(covered, 1)} Jahre zurück">${k} Jahre</button>`)).join("");
@@ -755,19 +1149,20 @@ function fairValue(p) {
   <section class="section" id="sec-fairvalue">
     <h2>Wie hoch ist der faire Wert der ${esc(p.name)} Aktie?</h2>
     <p class="lead">Die Differenz zwischen fairem Wert und aktuellem Kurs spiegelt das Renditepotenzial wider.
-      Der faire Wert hängt vom Zeitraum ab, über den das durchschnittliche ${v.multiple_label} berechnet wird.</p>
-    <div class="toolbar">
+      ${basic ? `Der faire Wert ist das durchschnittliche ${v.multiple_label} der vergangenen Jahre, angewendet auf die heutige Kennzahl.`
+        : `Der faire Wert hängt vom Zeitraum ab, über den das durchschnittliche ${v.multiple_label} berechnet wird.`}</p>
+    ${basic ? "" : `<div class="toolbar">
       <span class="secondary">Bewertungszeitraum</span>
       <div class="segmented" id="period-seg" role="group" aria-label="Bewertungszeitraum">${buttons}</div>
-    </div>
+    </div>`}
     <div class="grid tiles" id="fv-tiles"></div>
     <p id="fv-text" style="margin-top:14px;max-width:900px"></p>
     <div class="card">
-      <div class="chart-title"><h3>Kurs und fairer Wert</h3><span class="muted">in ${esc(p.currency)}</span></div>
+      <div class="chart-title"><h3>Kurs und fairer Wert</h3><span class="muted">${unitNote(p, "day")}</span></div>
       <div class="chart" id="ch-fv"></div>
     </div>
-    <p id="fv-forecast" style="margin-top:14px;max-width:900px"></p>
-    ${dcfCard(p)}
+    ${basic ? "" : `<p id="fv-forecast" style="margin-top:14px;max-width:900px"></p>
+    ${dcfCard(p)}`}
   </section>`;
 }
 
@@ -848,7 +1243,7 @@ function fairValueSection(root, p, state, onPeriod) {
     root.querySelector("#fv-tiles").innerHTML = [
       tile(term("fairer_wert", "Fairer Wert"), F.money(per.fair_value, ccy), `${term("harmonisches_mittel", "⌀")} ${v.multiple_label} ${F.num(per.avg_multiple, 2)} × ${F.money(v.current_value, ccy)}`),
       tile("Kurs vs. fairer Wert", F.signedPct(per.deviation, 1), badge(per.rating)),
-      tile(term("kursziel", "Analysten-Kursziel"), F.money(a.target_mean, ccy),
+      isBasic() ? "" : tile(term("kursziel", "Analysten-Kursziel"), F.money(a.target_mean, ccy),
         F.isNum(a.target_mean) ? `${F.signedPct(a.upside, 1)} · ${F.int(a.count)} Analysten` : "keine Schätzungen"),
       expectedTile(v, state.period),
     ].join("");
@@ -881,7 +1276,8 @@ function fairValueSection(root, p, state, onPeriod) {
         was einer Renditeerwartung von ${F.signedPct(a.upside, 1)} entspricht. Das niedrigste Kursziel liegt bei ${F.money(a.target_low, ccy)},
         das höchste bei ${F.money(a.target_high, ccy)}.`);
     }
-    root.querySelector("#fv-forecast").innerHTML = parts.join(" ");
+    const forecast = root.querySelector("#fv-forecast"); // nicht in der Basis-Ansicht
+    if (forecast) forecast.innerHTML = parts.join(" ");
   };
 
   const build = (t) => {
@@ -944,8 +1340,8 @@ function fairValueSection(root, p, state, onPeriod) {
   };
   const chart = C.mount(root.querySelector("#ch-fv"), build);
   const seg = root.querySelector("#period-seg");
-  const paintSeg = () => seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.period === state.period)));
-  seg.addEventListener("click", (e) => {
+  const paintSeg = () => seg?.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.period === state.period)));
+  seg?.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-period]");
     if (!b) return;
     state.period = b.dataset.period;
@@ -966,6 +1362,7 @@ function dividend(p) {
   const turboText = F.isNum(d.turbo)
     ? `Die aktuelle Dividendenrendite von ${F.pct(d.yield, 2)} liegt ${F.pct(Math.abs(d.turbo), 0)} ${d.turbo >= 0 ? "über" : "unter"} ihrem ${refYears}-Jahres-Durchschnitt von ${F.pct(ref, 2)}.
        ${d.turbo > 0.2 ? "Die Aktie lockt also mit einer historisch hohen Dividendenrendite (Dividenden-Turbo)." : ""}` : "";
+  const basic = isBasic();
   const payments = [...d.payments].reverse().map(([day, v]) => `<tr><td>${F.date(day)}</td><td>${F.money(v, ccy, 4)}</td></tr>`).join("");
   return `
   <section class="section" id="sec-dividend">
@@ -977,27 +1374,27 @@ function dividend(p) {
     <div class="grid tiles">
       ${tile(term("dividendenrendite", "Dividendenrendite"), F.pct(d.yield, 2), `${F.money(d.ttm, ccy)} in den letzten 12 Monaten`)}
       ${tile(term("dividendenwachstum", `Dividendenwachstum (${Math.round(d.stats_years || 0)} J.)`), F.pct(d.growth, 2), `pro Jahr · 5 J.: ${F.pct(d.growth_cagr_5y, 1)}`)}
-      ${tile(term("dividendenstabilitaet", "Dividendenstabilität"), F.stability(d.stability), "von max. 1,0")}
+      ${basic ? "" : tile(term("dividendenstabilitaet", "Dividendenstabilität"), F.stability(d.stability), "von max. 1,0")}
       ${tile(term("ausschuettungsquote", "Ausschüttungsquote"), F.pct(d.payout_eps, 0), `vom Gewinn · vom ${term("free_cashflow", "Free Cashflow")}: ${F.pct(d.payout_fcf, 0)}`)}
       ${tile(term("dividendensteigerungen", "Steigerungen in Folge"), `${d.increase_streak} J.`, `ohne Kürzung: ${d.no_cut_streak} J.`)}
-      ${tile(term("rendite_vs_durchschnitt", "Rendite vs. Durchschnitt"), F.signedPct(d.turbo, 0), F.isNum(ref) ? `⌀ ${refYears} J.: ${F.pct(ref, 2)}` : "zu kurze Historie")}
+      ${basic ? "" : `${tile(term("rendite_vs_durchschnitt", "Rendite vs. Durchschnitt"), F.signedPct(d.turbo, 0), F.isNum(ref) ? `⌀ ${refYears} J.: ${F.pct(ref, 2)}` : "zu kurze Historie")}
       ${taxTile(p)}
       ${tile("Nächste Termine", p.facts.ex_dividend_date ? F.date(p.facts.ex_dividend_date) : "–",
-        `Ex-Tag${p.facts.dividend_pay_date ? ` · Zahlung ${F.date(p.facts.dividend_pay_date)}` : ""}${p.facts.ex_dividend_date && p.facts.ex_dividend_date < p.data.last_price_date ? " (vergangen)" : ""}`)}
+        `Ex-Tag${p.facts.dividend_pay_date ? ` · Zahlung ${F.date(p.facts.dividend_pay_date)}` : ""}${p.facts.ex_dividend_date && p.facts.ex_dividend_date < p.data.last_price_date ? " (vergangen)" : ""}`)}`}
     </div>
-    ${taxNote(p)}
-    <div class="grid two" style="margin-top:12px">
+    ${basic ? "" : taxNote(p)}
+    <div class="${basic ? "" : "grid two"}" style="margin-top:12px">
       <div class="card">
-        <div class="chart-title"><h3>Dividende je Kalenderjahr</h3><span class="muted">in ${esc(ccy)}, splitbereinigt</span></div>
+        <div class="chart-title"><h3>Dividende je Kalenderjahr</h3><span class="muted">${unitNote(p, "now")}, splitbereinigt</span></div>
         <div class="chart small" id="ch-div"></div>
-        <details class="table-view"><summary>Alle Zahlungen als Tabelle</summary>
+        ${basic ? "" : `<details class="table-view"><summary>Alle Zahlungen als Tabelle</summary>
           <div class="table-wrap"><table class="data"><thead><tr><th>Datum</th><th>Betrag</th></tr></thead><tbody>${payments}</tbody></table></div>
-        </details>
+        </details>`}
       </div>
-      <div class="card">
+      ${basic ? "" : `<div class="card">
         <div class="chart-title"><h3>Dividendenrendite im Zeitverlauf</h3><span class="muted">Dividenden der letzten 12 Monate ÷ Kurs</span></div>
         <div class="chart small" id="ch-yield"></div>
-      </div>
+      </div>`}
     </div>
   </section>`;
 }
@@ -1040,6 +1437,7 @@ function dividendCharts(root, p) {
         data: rows.map(([, v, partial]) => (partial ? v : null)) },
     ],
   }));
+  if (!root.querySelector("#ch-yield")) return; // nicht in der Basis-Ansicht
   const ys = d.yield_series.map(([day, v]) => [Date.parse(day), v]);
   const from = ys.length ? Math.max(ys[0][0], ys[ys.length - 1][0] - 15 * YEAR) : 0;
   const data = ys.filter(([t]) => t >= from);
@@ -1073,7 +1471,8 @@ function annual(p) {
   return `
   <section class="section" id="sec-annual">
     <h2>Jahreswerte</h2>
-    <p class="lead">Grundlage aller Kennzahlen. Werte je Aktie in ${esc(ccy)}${p.data.financial_currency && !ccy.startsWith(p.data.financial_currency) ? ` (umgerechnet aus ${esc(p.data.financial_currency)})` : ""}, splitbereinigt.</p>
+    <p class="lead">Grundlage aller Kennzahlen. Werte je Aktie ${foreign(p) ? `in €, aus der Kurswährung ${esc(p.eur.original_currency)} zum heutigen Wechselkurs umgerechnet${p.data.financial_currency && p.data.financial_currency !== fx1(p) ? ` (dorthin aus der Bilanzwährung ${esc(p.data.financial_currency)} zum Kurs am Bilanzstichtag)` : ""}`
+      : `in ${esc(ccy)}${p.data.financial_currency && !ccy.startsWith(p.data.financial_currency) ? ` (umgerechnet aus ${esc(p.data.financial_currency)})` : ""}`}, splitbereinigt.</p>
     <div class="card table-scroll">
       <table class="data">
         <thead><tr><th>Geschäftsjahr bis</th><th>${term("gewinn_je_aktie", "Gewinn je Aktie")}</th><th>${term("bereinigter_gewinn", "Gewinn bereinigt")}</th>
@@ -1088,27 +1487,36 @@ function annual(p) {
   </section>`;
 }
 
-// ---------------------------------------------------------------- Fazit
-function verdict(p) {
-  const s = p.summary;
-  const e = s.earnings;
-  const earnings = [e.reliability && `Gewinnentwicklung ${e.reliability}`, e.growth, e.outlook].filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join("");
-  const scores = s.scores.map((x) => `${esc(x.label)}s-Score: <b>${x.score}</b>`).join("<br>");
+// ---------------------------------------------------------------- Hebelprodukte (Optionsscheine, Knock-outs)
+// Wird erst geladen, wenn der Abschnitt in die Nähe des Bildschirms kommt (acht Abfragen bei onvista)
+function derivatives(p) {
   return `
-  <section class="section" id="sec-verdict">
-    <h2>Fazit: Für wen ist die ${esc(p.name)} Aktie ein Kauf?</h2>
+  <section class="section" id="sec-derivatives">
+    <div class="chart-title"><h2>Optionsscheine und Knock-outs auf die ${esc(p.name)} Aktie</h2>
+      <span class="toolbar" style="margin:0"><a class="btn primary" href="#/hebel?s=${encodeURIComponent(p.symbol)}">Alle Produkte in der großen Tabelle</a>
+      <a class="btn" href="#/callput?s=${encodeURIComponent(p.symbol)}">Call/Put-Rechner</a></span></div>
+    <div id="deriv-overview" style="margin-top:12px"><p class="muted">Wird geladen, sobald Sie hierher scrollen …</p></div>
+  </section>`;
+}
+
+function wireDerivatives(root, p, isCurrent) {
+  const el = root.querySelector("#deriv-overview");
+  if (!el) return;
+  const io = new IntersectionObserver((entries) => {
+    if (!entries.some((e) => e.isIntersecting)) return;
+    io.disconnect();
+    derivOverview(el, p.symbol, isCurrent);
+  }, { rootMargin: "600px 0px" });
+  io.observe(el);
+}
+
+// ---------------------------------------------------------------- Notizen (das Fazit steht oben unter „Auf einen Blick“)
+function notes(p) {
+  return `
+  <section class="section" id="sec-notes">
+    <h2>Meine Notizen zur ${esc(p.name)} Aktie</h2>
     <div class="card" style="margin-top:12px">
-      <div class="verdict">
-        <div>Gewinnentwicklung</div><div>${earnings ? `<ul>${earnings}</ul>` : "–"}</div>
-        <div>Anlagestrategie</div><div>${scores}</div>
-        <div>Bewertung</div><div>${badge(s.valuation)}</div>
-        <div>Stimmung</div><div>${badge(s.sentiment)}</div>
-      </div>
-      <p style="margin:14px 0 0">${esc(s.text)}</p>
-    </div>
-    <div class="card" style="margin-top:12px">
-      <h3>Meine Notizen zur Aktie</h3>
-      <p class="muted" style="font-size:13px;margin:4px 0 8px">Ihre Investment-These: Warum kaufen? Was müsste passieren, damit Sie verkaufen?
+      <p class="muted" style="font-size:13px;margin:0 0 8px">Ihre Investment-These: Warum kaufen? Was müsste passieren, damit Sie verkaufen?
         Die Notizen bleiben lokal auf Ihrem Rechner (data/notizen.json).</p>
       <div class="field"><textarea id="note-text" rows="5" aria-label="Notizen"></textarea></div>
       <div class="toolbar" style="margin:8px 0 0"><button class="btn primary" id="note-save" type="button">Notiz speichern</button>
@@ -1117,55 +1525,177 @@ function verdict(p) {
   </section>`;
 }
 
+// Notizen speichern sich nach kurzer Tipp-Pause und beim Verlassen des Feldes selbst; der Knopf speichert sofort
 async function wireNotes(root, p, isCurrent) {
   const text = root.querySelector("#note-text");
   const status = root.querySelector("#note-status");
+  let loaded = false;
+  let saved = "";
+  let timer = null;
   try {
     const n = await api.note(p.symbol);
     if (!isCurrent()) return;
     text.value = n.text || "";
-    status.textContent = n.updated ? `zuletzt gespeichert am ${F.date(n.updated)}` : "";
+    saved = text.value;
+    loaded = true;
+    status.textContent = n.updated ? `zuletzt gespeichert am ${F.date(n.updated)}` : "speichert automatisch, während Sie schreiben";
   } catch (e) { status.textContent = e.message; }
-  root.querySelector("#note-save").addEventListener("click", async () => {
+  const save = async () => {
+    clearTimeout(timer);
+    if (!loaded || text.value === saved) return;
+    const value = text.value;
+    status.textContent = "wird gespeichert …";
     try {
-      const n = await api.saveNote(p.symbol, text.value);
-      status.textContent = n.updated ? `gespeichert am ${F.date(n.updated)}` : "gelöscht";
+      const n = await api.saveNote(p.symbol, value);
+      saved = value;
+      const time = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      status.textContent = n.updated ? `gespeichert um ${time} Uhr` : "Notiz gelöscht";
     } catch (e) { status.textContent = e.message; }
+  };
+  text.addEventListener("input", () => {
+    clearTimeout(timer);
+    status.textContent = "ungespeicherte Änderungen …";
+    timer = setTimeout(save, 1500);
   });
+  text.addEventListener("blur", save);
+  text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } });
+  root.querySelector("#note-save").addEventListener("click", async () => {
+    if (text.value === saved) { status.textContent = "schon gespeichert"; return; }
+    await save();
+  });
+  // beim Verlassen der Seite noch speichern, was in der Tipp-Pause steckt
+  window.addEventListener("hashchange", save, { once: true });
 }
 
 // ---------------------------------------------------------------- Verdrahtung
-async function wire(root, p, isCurrent) {
-  root.querySelector(".subnav").addEventListener("click", (e) => {
+// „Was macht …?“: deutsche Einleitung des Wikipedia-Artikels (über Wikidata per ISIN oder Firmenname gefunden),
+// sonst bleibt die englische Beschreibung von Yahoo stehen
+async function loadDescription(root, p, worldIsin, isCurrent) {
+  const box = root.querySelector("#about");
+  if (!box) return;
+  let d;
+  try { d = await api.description(p.symbol, p.facts.isin || worldIsin || "", p.name); } catch (e) { return; }
+  if (!isCurrent() || !d?.text) return;
+  const paras = d.text.split(/\n+/).filter((t) => t.trim()).map((t) => `<p>${esc(t)}</p>`).join("");
+  root.querySelector("#about-text").innerHTML = `${paras}
+    <p class="muted" style="font-size:13px">Quelle: <a href="${esc(d.url)}" target="_blank" rel="noopener">Wikipedia, Artikel „${esc(d.title)}“ ↗</a>
+      (Text unter CC BY-SA 4.0)${p.facts.description ? ' · <button type="button" class="linklike" id="about-en">englische Beschreibung von Yahoo</button>' : ""}</p>
+    <div id="about-en-text" hidden><p>${esc(p.facts.description || "")}</p></div>`;
+  root.querySelector("#about-src").textContent = "(Wikipedia)";
+  box.hidden = false;
+  root.querySelector("#about-en")?.addEventListener("click", () => {
+    const en = root.querySelector("#about-en-text");
+    en.hidden = !en.hidden;
+  });
+}
+
+// Abschnittsnavigation: der Abschnitt, in dem man gerade liest, ist markiert
+function wireSubnav(root, isCurrent) {
+  const nav = root.querySelector(".subnav");
+  nav.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-target]");
     if (b) document.getElementById(b.dataset.target)?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
+  const buttons = [...nav.querySelectorAll("button[data-target]")];
+  let queued = false;
+  const mark = () => {
+    queued = false;
+    if (!isCurrent()) { window.removeEventListener("scroll", onScroll); return; }
+    const line = nav.getBoundingClientRect().bottom + 40;
+    let current = null;
+    for (const b of buttons) {
+      const el = document.getElementById(b.dataset.target);
+      if (el && el.getBoundingClientRect().top <= line) current = b;
+    }
+    // ganz unten angekommen: der letzte Abschnitt, auch wenn er kurz ist
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) current = buttons[buttons.length - 1];
+    for (const b of buttons) b.setAttribute("aria-current", String(b === current));
+    // markierten Knopf in der (seitlich scrollbaren) Leiste sichtbar halten, ohne die Seite zu bewegen
+    if (current && (current.offsetLeft < nav.scrollLeft || current.offsetLeft + current.offsetWidth > nav.scrollLeft + nav.clientWidth)) {
+      nav.scrollLeft = current.offsetLeft - 16;
+    }
+  };
+  const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(mark); } };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  mark();
+}
+
+async function wire(root, p, isCurrent) {
+  wireSubnav(root, isCurrent);
   root.querySelector("#refresh-btn").addEventListener("click", () => renderProfile(root, p.symbol, isCurrent, true));
 
   const watchBtn = root.querySelector("#watch-btn");
-  const paintWatch = (on) => { watchBtn.textContent = on ? "★ In der Watchlist" : "☆ Zur Watchlist"; };
-  watchBtn.addEventListener("click", async () => {
+  // Gruppen-Knopf nur, solange die Aktie auf der Watchlist steht; zeigt die Gruppen der Aktie
+  const groupBtn = root.querySelector("#group-btn");
+  const paintGroups = async () => {
+    const all = await getGroups();
+    if (!isCurrent()) return;
+    const gs = groupsOf(all, p.symbol);
+    const label = gs.map((g) => pathLabel(all, g.id)).join(", ");
+    groupBtn.textContent = gs.length ? `▤ ${label.length > 40 ? `${label.slice(0, 38)}…` : label}` : "▤ Gruppe wählen";
+    groupBtn.title = gs.length ? `Watchlist-Gruppen: ${label}. Klicken zum Ändern.` : "Die Aktie in eine Watchlist-Gruppe einteilen";
+  };
+  const onGroups = () => { if (!isCurrent()) { document.removeEventListener("watchgroups-changed", onGroups); return; } paintGroups().catch(() => {}); };
+  document.addEventListener("watchgroups-changed", onGroups);
+  groupBtn.addEventListener("click", () => openAssign([p.symbol], `Gruppen für ${p.name || p.symbol}`));
+  const paintWatch = (on) => {
+    if (!isCurrent()) return;
+    watchBtn.textContent = on ? "★ In der Watchlist" : "☆ Zur Watchlist";
+    groupBtn.hidden = !on;
+    if (on) paintGroups().catch(() => {});
+  };
+  const flip = async () => {
     watchBtn.disabled = true;
-    try { paintWatch(await toggleWatch(p.symbol)); } finally { watchBtn.disabled = false; }
-  });
+    try { await flipWatch(p.symbol, p.name, paintWatch); } catch (e) { toast(e.message, { kind: "bad" }); } finally { watchBtn.disabled = false; }
+  };
+  watchBtn.addEventListener("click", flip);
   getWatchlist().then((set) => paintWatch(set.has(p.symbol))).catch(() => {});
+  browseKeys(p.symbol, {
+    m: flip,
+    n: () => {
+      document.getElementById("sec-notes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTimeout(() => root.querySelector("#note-text")?.focus({ preventScroll: true }), 400);
+    },
+  });
+
+  // Handelbarkeit bei Trade Republic selbst korrigieren (die Handelsliste der LS Exchange ist nur eine Annäherung)
+  const trEl = root.querySelector("#tr-line");
+  trEl.addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-tr]");
+    if (!b) return;
+    b.disabled = true;
+    const value = { yes: true, no: false, reset: null }[b.dataset.tr];
+    try {
+      p.trade_republic = await api.setTradable(p.symbol, value, p.facts.isin || "");
+      trEl.innerHTML = trLine(p.trade_republic, F.date);
+    } catch (err) { b.disabled = false; }
+  });
 
   if (p.quality.points.length) epsChart(root.querySelector("#ch-eps"), p);
   else root.querySelector("#ch-eps").outerHTML = '<p class="muted">Keine Gewinnhistorie verfügbar.</p>';
+  if (root.querySelector("#ch-revenue")) { // nur in der Profi-Ansicht
+    revenueChart(root.querySelector("#ch-revenue"), p);
+    const margins = root.querySelector("#ch-margins");
+    if (p.business.years.some((r) => MARGINS.some(([k]) => F.isNum(r[k])))) marginChart(margins, p);
+    else margins.outerHTML = '<p class="muted">Keine Margen berechenbar (Umsatz oder Ergebnisse fehlen).</p>';
+  }
   priceChart(root, p);
   dividendCharts(root, p);
   if (p.valuation.available) {
     const state = { period: p.valuation.default_period, mult: p.valuation.metric_key };
-    const multipleView = multipleChart(root, p, state);
-    fairValueSection(root, p, state, () => multipleView.update());
-  } else if (multiples(p.valuation).length) {
+    const multipleView = root.querySelector("#ch-multiple") ? multipleChart(root, p, state) : null;
+    fairValueSection(root, p, state, () => multipleView?.update());
+  } else if (multiples(p.valuation).length && root.querySelector("#ch-multiple")) {
     // keine Bewertung möglich, aber frühere Phasen mit Gewinn: Verlauf trotzdem zeigen
     const first = multiples(p.valuation)[0];
     const period = ["10", "5", "3"].find((k) => F.isNum(first.averages[k])) || "10";
     multipleChart(root, p, { period, mult: first.key });
   }
   dcfWire(root, p);
+  const trustHist = root.querySelector("#trust-hist");
+  if (trustHist) renderHistory(trustHist, p.trust.symbol || p.symbol, isCurrent);
   wireNotes(root, p, isCurrent);
+  wireDerivatives(root, p, isCurrent);
   loadWorld(root, p, isCurrent);
   loadNews(root, p, isCurrent, "de");
   root.querySelector("#news-seg").addEventListener("click", (e) => {

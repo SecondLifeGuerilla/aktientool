@@ -17,6 +17,13 @@ def is_short(years: float | None) -> bool:
     return years is None or years < MIN_RELIABLE_YEARS - 0.2
 
 
+def mostly_losses(stats: dict) -> bool:
+    """Mindestens die Hälfte der Jahreswerte negativ: Die Trendgerade würde dann schrumpfende Verluste als stabiles
+    Wachstum werten (UBTech 2022–2025: −2,3 → −1,4 je Aktie ergibt eine Stabilität von 0,46). Eine Gewinnstabilität
+    gibt es in diesem Fall nicht."""
+    return stats.get("count", 0) >= 3 and stats.get("losses", 0) * 2 >= stats["count"]
+
+
 def trend_stats(points: list[tuple[pd.Timestamp, float]], max_years: int = 10) -> dict:
     """Stabilität und Wachstum einer Jahresreihe (z. B. Gewinn je Aktie) über die letzten `max_years` Jahre.
 
@@ -26,11 +33,12 @@ def trend_stats(points: list[tuple[pd.Timestamp, float]], max_years: int = 10) -
     Wachstum: jährliche Rate aus einer Regression der logarithmierten Werte, wenn alle Werte positiv sind.
     Das ist robuster als ein Vergleich von erstem und letztem Jahr, weil jeder Wert gleich zählt.
     Gibt es Verlustjahre, wird der Durchschnitt der ersten drei mit dem der letzten drei Jahre verglichen
-    (sofern beide positiv sind).
+    (sofern beide positiv sind). `losses` zählt die Jahreswerte ≤ 0 (siehe mostly_losses).
     """
     pts = [(d, v) for d, v in points if v is not None and math.isfinite(v)]
     pts = pts[-(max_years + 1):]
-    result = {"stability": None, "growth": None, "years": 0, "count": len(pts), "start": None, "end": None}
+    result = {"stability": None, "growth": None, "years": 0, "count": len(pts), "start": None, "end": None,
+              "losses": sum(v <= 0 for _, v in pts)}
     if len(pts) < 3:
         return result
     t = np.array([(d - pts[0][0]).days / 365.25 for d, _ in pts])
@@ -105,6 +113,15 @@ def momentum_12_1(close: pd.Series) -> float | None:
     if not start or pd.isna(start) or pd.isna(end):
         return None
     return float(end / start - 1)
+
+
+def volatility(closes, days: int) -> float | None:
+    """Historische Volatilität p. a.: Standardabweichung der täglichen Log-Renditen der letzten `days` Handelstage,
+    hochgerechnet mit √252. Grundlage für Optionsscheine im Call/Put-Rechner."""
+    prices = np.asarray(closes, dtype=float)[-(days + 1):]
+    if len(prices) < 21 or (prices <= 0).any():
+        return None
+    return float(np.std(np.diff(np.log(prices)), ddof=1) * np.sqrt(252))
 
 
 def all_time_high(close: pd.Series) -> dict:

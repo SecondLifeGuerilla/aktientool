@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .metrics import is_short, trend_stats
+from .metrics import is_short, mostly_losses, trend_stats
 
 METRICS = [
     ("eps", "Bilanzierter Gewinn", "KGV"),
@@ -352,8 +352,9 @@ def build(close: pd.Series, price: float, annual: list[dict], ttm: dict, estimat
         elif issues[revenue["key"]] is None and attempt(revenue):
             basis_note = "revenue"
 
-    stabilities = [{"key": c["key"], "label": c["label"], "stability": c["stability"], "years": c["years"],
-                    "issue": issues[c["key"]]} for c in candidates]
+    # Angezeigt wird keine Stabilität für überwiegend negative Reihen (schrumpfende Verluste sind kein stabiler Gewinn)
+    stabilities = [{"key": c["key"], "label": c["label"], "stability": None if mostly_losses(c) else c["stability"],
+                    "losses": mostly_losses(c), "years": c["years"], "issue": issues[c["key"]]} for c in candidates]
     if best is None:
         shown, missing = _multiples(close, price, candidates)
         return {"available": False, "stabilities": stabilities, "multiples": shown, "multiples_missing": missing,

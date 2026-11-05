@@ -23,14 +23,16 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, NamedTuple
 
-from . import config, deep, snapshots
+from . import config, deep, snapshots, userdata
 from .cache import cache_mtime, peek, store
 from .names import CONTINENTS, COUNTRIES, SECTORS, industry_de
-from .sources import fx, yahoo_screener
+from .sources import fx, lsx, yahoo_screener
 
 log = logging.getLogger(__name__)
 
 CACHE_KEY = "welt"
+# 2: weitere ISINs je Firma (ADRs, andere Börsen) für die Handelbarkeit bei Trade Republic; ältere Daten neu laden
+FORMAT = 2
 
 
 class Market(NamedTuple):
@@ -491,15 +493,20 @@ def build(min_cap_eur: float, progress: Callable[[int, int], None] = lambda done
         log.warning("Weltauswahl: Heimatnotierungen nicht nachgeladen: %s", e)
     progress(total, total)
 
-    stocks = []
-    for listing in chosen:
+    stocks, alt_isins = [], {}
+    for listing, group in zip(chosen, groups):
         if is_foreign_receipt(listing) or not listing["cap_usd"] or listing["cap_usd"] < min_usd:
             continue
         stocks.append(make_row(listing, country_of(listing), eur_usd))
+        # Bei Trade Republic gibt es manche Firmen nur als ADR/GDR oder über eine andere Börse (TSMC, Samsung)
+        others = sorted({l["isin"] for l in group if l["isin"] and l["isin"] != listing["isin"]})
+        if others:
+            alt_isins[listing["symbol"]] = others
     stocks.sort(key=lambda r: -r.get("market_cap", 0))
     add_scores(stocks)
     used = sorted({r["country"] for r in stocks})
     return {
+        "format": FORMAT,
         "built_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "min_cap_eur": min_cap_eur,
         "eur_usd": eur_usd,
@@ -511,7 +518,32 @@ def build(min_cap_eur: float, progress: Callable[[int, int], None] = lambda done
         "sectors": sorted({r["sector"] for r in stocks if r.get("sector")}),
         "warnings": warnings,
         "stocks": stocks,
+        "alt_isins": alt_isins,  # nur intern, wird nicht an die Oberfläche geschickt
     }
+
+
+# ---------------------------------------------------------------- Handelbarkeit bei Trade Republic
+
+def trade_republic_info(symbol: str, isins: list[str], listing: dict | None, overrides: dict[str, bool]) -> dict:
+    """Handelbar laut Handelsliste der LS Exchange (siehe sources/lsx.py); die eigene Korrektur geht vor.
+    tradable ist None, solange die Liste nicht geladen ist und es keine Korrektur gibt."""
+    found = lsx.find(listing, isins)
+    info: dict = {"tradable": None if listing is None else found is not None}
+    if found:
+        isin, (wkn, name, _) = found
+        info.update(isin=isin, wkn=wkn, ls_name=name, other_listing=bool(isins) and isin != isins[0])
+    if symbol in overrides:
+        info.update(tradable=overrides[symbol], override=True)
+    return info
+
+
+def _mark_tradable(row: dict, alt: list[str] | None, listing: dict | None, overrides: dict[str, bool]) -> None:
+    """tr = 1/0 in der Tabellenzeile (fehlt, solange es keine Liste gibt), tr_isin bei einer anderen Notierung."""
+    info = trade_republic_info(row["symbol"], [i for i in [row.get("isin"), *(alt or [])] if i], listing, overrides)
+    if info["tradable"] is not None:
+        row["tr"] = int(info["tradable"])
+    if info["tradable"] and info.get("other_listing"):
+        row["tr_isin"] = info["isin"]
 
 
 # ---------------------------------------------------------------- Hintergrund-Aufbau und Auslieferung
@@ -559,22 +591,26 @@ def status(auto_refresh: bool = True) -> dict:
     age = time.time() - mtime if mtime is not None else None
     with _lock:
         st = dict(_state)
-    stale = age is None or age > config.TTL_WORLD
+    if auto_refresh:
+        lsx.refresh_if_stale()  # Handelsliste für Trade Republic, lädt im Hintergrund
+    universe, outdated = None, False
+    if mtime is not None:
+        with _lock:
+            p = _prepared()
+            universe = p["universe"] if p else None
+            outdated = bool(p) and p["format"] < FORMAT
+    stale = age is None or age > config.TTL_WORLD or outdated
     recently_failed = st["error"] and st["finished"] and time.time() - st["finished"] < 600
     if auto_refresh and stale and not st["running"] and not recently_failed:
         start()
         with _lock:
             st = dict(_state)
-    # version ändert sich mit jedem neuen Datenstand, geänderten Themen oder neuen Ergebnissen der Tiefenanalyse;
-    # die Oberfläche lädt nur dann neu
-    version = f"{int(mtime)}-{int(_themes_mtime())}-{int(deep.mtime())}" if mtime else None
-    universe = None
-    if mtime is not None:
-        with _lock:
-            p = _prepared()
-            universe = p["universe"] if p else None
-        if universe and config.DEEP_AUTO:
-            deep.start(universe)  # läuft schon oder ist pausiert: tut nichts
+    if universe and config.DEEP_AUTO:
+        deep.start(universe)  # läuft schon oder ist pausiert: tut nichts
+    # version ändert sich mit jedem neuen Datenstand, geänderten Themen, neuen Ergebnissen der Tiefenanalyse, einer
+    # neuen Handelsliste oder einer eigenen Korrektur zur Handelbarkeit; die Oberfläche lädt nur dann neu
+    version = (f"{int(mtime)}-{int(_themes_mtime())}-{int(deep.mtime())}-{int(lsx.mtime())}-{int(userdata.tradable_mtime())}"
+               if mtime else None)
     return {"ready": mtime is not None, "version": version, "age_seconds": age,
             "running": st["running"], "done": st["done"], "total": st["total"], "error": st["error"],
             "deep": deep.status(len(universe) if universe else None)}
@@ -595,16 +631,20 @@ def _themes_mtime() -> float:
 
 def _prepared() -> dict | None:
     """Daten aus dem Cache, ergänzt um die Themen. themes.json wird bei jeder Änderung neu angewendet,
-    ohne die Börsen neu zu laden. Aufruf nur unter _lock."""
-    key = (cache_mtime(CACHE_KEY), _themes_mtime(), deep.mtime())
+    ohne die Börsen neu zu laden; ebenso die Handelsliste für Trade Republic. Aufruf nur unter _lock."""
+    key = (cache_mtime(CACHE_KEY), _themes_mtime(), deep.mtime(), lsx.mtime(), userdata.tradable_mtime())
     if _payload.get("key") == key:
         return _payload
     data = peek(CACHE_KEY)
     if data is None:
         return None
     deep_rows = deep.rows()
+    alt = data.pop("alt_isins", {})
+    listing, overrides = lsx.current(), userdata.tradable_overrides()
     for r in data["stocks"]:
         deep.merge_into(r, deep_rows.get(r["symbol"]))
+        _mark_tradable(r, alt.get(r["symbol"]), listing, overrides)
+    data["trade_republic"] = lsx.status()
     try:
         snapshots.save(data["stocks"])  # ein Tagesstand pro Tag (für die Auswertung der Scores)
     except OSError as e:
@@ -626,6 +666,7 @@ def _prepared() -> dict | None:
     _payload.clear()
     _payload.update(key=key, raw=raw, gz=gzip.compress(raw, 6), countries=data["countries"],
                     by_symbol={r["symbol"]: r for r in data["stocks"]}, count=len(data["stocks"]),
+                    alt=alt, format=data.get("format", 1),
                     # Reihenfolge der Tiefenanalyse: größte Firmen zuerst
                     universe=[{"symbol": r["symbol"], "isin": r.get("isin")} for r in data["stocks"]])
     return _payload
@@ -646,3 +687,47 @@ def stock(symbol: str) -> dict | None:
             return None
         country = p["countries"].get(row["country"], {})
         return {**row, "country_name": country.get("name"), "continent": country.get("continent"), "universe": p["count"]}
+
+
+def trade_republic(symbol: str, isin: str | None) -> dict:
+    """Handelbarkeit einer beliebigen Aktie (Profil, Screener): die ISIN des Profils, dazu aus der Weltauswahl die
+    ISIN der Heimatnotierung und die weiterer Notierungen der Firma (ADRs …)."""
+    with _lock:
+        p = _prepared()
+        row = p["by_symbol"].get(symbol) if p else None
+        alt = p["alt"].get(symbol, []) if p else []
+    isins = list(dict.fromkeys(i for i in [isin, row.get("isin") if row else None, *alt] if i))
+    listing = lsx.current()
+    info = trade_republic_info(symbol, isins, listing, userdata.tradable_overrides())
+    info["list_date"] = listing.get("date") if listing else None
+    return info
+
+
+def isins(symbol: str) -> list[str]:
+    """ISIN der Heimatnotierung, dann die weiterer Notierungen (ADRs …) einer Aktie der Weltauswahl."""
+    with _lock:
+        p = _prepared()
+        row = p["by_symbol"].get(symbol) if p else None
+        alt = p["alt"].get(symbol, []) if p else []
+    return list(dict.fromkeys(i for i in [row.get("isin") if row else None, *alt] if i))
+
+
+def symbol_for_isin(isin: str) -> str | None:
+    """Ticker der Weltauswahl zu einer ISIN (Heimatnotierung oder ADR o. Ä.)."""
+    with _lock:
+        p = _prepared()
+        if not p:
+            return None
+        if "by_isin" not in p:  # erst bei Bedarf aufbauen; _prepared() leert _payload bei jedem neuen Stand
+            idx = {i: sym for sym, alts in p["alt"].items() for i in alts}
+            idx.update({r["isin"]: r["symbol"] for r in p["universe"] if r.get("isin")})  # Heimatnotierung geht vor
+            p["by_isin"] = idx
+        return p["by_isin"].get(isin)
+
+
+def tradable_flags(symbols: list[str]) -> dict[str, bool]:
+    """Handelbar ja/nein für die Ticker, die in der Weltauswahl stehen (Suchvorschläge); andere fehlen."""
+    with _lock:
+        p = _prepared()
+        rows = p["by_symbol"] if p else {}
+        return {s: bool(rows[s]["tr"]) for s in symbols if s in rows and "tr" in rows[s]}

@@ -1,10 +1,12 @@
 // Alarme: Kurs unter/über einer Schwelle, Kurs unter fairem Wert, Dividendenkürzung, Score-Verfall
 import { api } from "./api.js";
+import { trackBrowse } from "./browse.js";
 import * as F from "./format.js";
 import { attachSearch } from "./search.js";
+import { toast } from "./toast.js";
 
 const esc = F.escapeHtml;
-const UNITS = { price_below: "Kurs", price_above: "Kurs", below_fair: "% unter fairem Wert", dividend_cut: "", score_below: "Punkte (0–100)" };
+const UNITS = { price_below: "Kurs in €", price_above: "Kurs in €", below_fair: "% unter fairem Wert", dividend_cut: "", score_below: "Punkte (0–100)" };
 
 export async function renderAlarms(root, params, isCurrent) {
   document.title = "Alarme – Aktientool";
@@ -32,6 +34,8 @@ export async function renderAlarms(root, params, isCurrent) {
   const $ = (s) => root.querySelector(s);
   attachSearch($("#a-symbol"), $("#a-results"), (sym) => { $("#a-symbol").value = sym; $("#a-value").focus(); });
   let types = {};
+  let shownSyms = [];
+  trackBrowse($("#a-rows"), "Alarme", () => shownSyms.map((s) => [s, s]));
 
   const paintUnit = () => {
     const t = $("#a-type").value;
@@ -52,16 +56,29 @@ export async function renderAlarms(root, params, isCurrent) {
     const st = data.status;
     $("#a-status").textContent = `${st.open} aktiv, ${st.total - st.open} ausgelöst · zuletzt geprüft: ${st.last_check ? new Date(st.last_check * 1000).toLocaleString("de-DE") : "noch nicht"}
       · Mitteilung: ${st.notify ? "macOS" : "aus"}${st.email ? " + E-Mail" : ""}${st.error ? ` · Fehler: ${st.error}` : ""}`;
-    const describe = (a) => (a.type === "dividend_cut" ? `Dividende sinkt unter ${F.money(a.baseline, "")} (12 Monate)`
+    // Kursschwellen in Euro; Alarme aus der Zeit vor der Euro-Anzeige (ohne "currency") gelten in der Kurswährung
+    const describe = (a) => (a.type === "dividend_cut"
+      ? `Dividende sinkt unter ${F.isNum(a.baseline_eur) ? F.money(a.baseline_eur, "€") : F.money(a.baseline, "")} (12 Monate)`
       : a.type === "below_fair" ? `Kurs mindestens ${F.num(a.value, 0)} % unter fairem Wert`
-        : `${types[a.type]} ${F.num(a.value, a.type === "score_below" ? 0 : 2)}`);
+        : a.type === "score_below" ? `${types[a.type]} ${F.num(a.value, 0)}`
+          : `${types[a.type]} ${F.money(a.value, a.currency === "EUR" ? "€" : "")}`);
     $("#a-rows").innerHTML = data.alerts.length ? [...data.alerts].reverse().map((a) => `<tr class="${a.triggered && !a.seen ? "alert-new" : ""}">
         <td class="name"><a href="#/aktie/${encodeURIComponent(a.symbol)}">${esc(a.symbol)}</a></td>
         <td style="text-align:left">${esc(describe(a))}</td><td>${F.date(a.created)}</td>
         <td style="text-align:left;white-space:normal">${a.triggered ? `<span class="badge serious">ausgelöst ${F.date(a.triggered)}</span> ${esc(a.message || "")}` : '<span class="badge good">aktiv</span>'}</td>
         <td>${a.triggered ? `<button class="linklike" data-reset="${a.id}" type="button">wieder scharf</button> · ` : ""}<button class="linklike" data-del="${a.id}" type="button">löschen</button></td>
-      </tr>`).join("") : '<tr><td colspan="5" class="muted" style="text-align:left">Noch keine Alarme.</td></tr>';
-    $("#a-rows").querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => { await api.alertRemove(b.dataset.del); load(false); }));
+      </tr>`).join("") : `<tr><td colspan="5" class="muted" style="text-align:left;white-space:normal">Noch keine Alarme. Bewährt haben sich zum Beispiel
+        „Kurs mindestens x % unter fairem Wert“ mit 10 % für Kandidaten Ihrer Watchlist (meldet eine Kaufgelegenheit) und
+        „Dividende gekürzt“ für Ihre Depotwerte. Am schnellsten legen Sie einen Alarm im Aktienprofil über „🔔 Alarm“ an.</td></tr>`;
+    // Löschen ohne Rückfrage, dafür mit „Rückgängig“ (der Alarm kommt samt Status an seine alte Stelle zurück)
+    $("#a-rows").querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+      const index = data.alerts.findIndex((a) => a.id === b.dataset.del);
+      const item = data.alerts[index];
+      try { await api.alertRemove(b.dataset.del); } catch (err) { toast(err.message, { kind: "bad" }); return; }
+      load(false);
+      toast(`Alarm für ${item.symbol} gelöscht.`, { action: "Rückgängig", onAction: async () => { await api.alertRestore(item, index); if (isCurrent()) load(false); } });
+    }));
+    shownSyms = [...new Set([...data.alerts].reverse().map((a) => a.symbol))];
     $("#a-rows").querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", async () => { await api.alertReset(b.dataset.reset); load(false); }));
     if (markSeen && st.unseen) {
       await api.alertsSeen();
@@ -73,8 +90,10 @@ export async function renderAlarms(root, params, isCurrent) {
     e.preventDefault();
     $("#a-msg").textContent = "Speichere …";
     try {
-      await api.alertAdd({ symbol: $("#a-symbol").value.trim().toUpperCase(), type: $("#a-type").value, value: $("#a-value").value });
-      $("#a-msg").textContent = "Alarm angelegt.";
+      const sym = $("#a-symbol").value.trim().toUpperCase();
+      await api.alertAdd({ symbol: sym, type: $("#a-type").value, value: F.parseNum($("#a-value").value) ?? $("#a-value").value });
+      $("#a-msg").textContent = "";
+      toast(`Alarm für ${sym} angelegt.`, { kind: "good" });
       $("#a-value").value = "";
       load(false);
     } catch (err) { $("#a-msg").textContent = err.message; }

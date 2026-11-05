@@ -42,11 +42,13 @@ def sentiment(momentum: float | None) -> dict | None:
 
 
 SHORT_RELIABILITY = "kaum beurteilbar"
+LOSS_RELIABILITY = "von Verlusten geprägt"
 
 
 def build(quality: dict, valuation_rating: dict | None, momentum: float | None, scorecard: list[dict]) -> dict:
     short = quality.get("short", False)  # weniger als ~5 Jahre: kein Urteil über Zuverlässigkeit und Wachstum
-    reliability = SHORT_RELIABILITY if short else earnings_reliability(quality.get("stability"))
+    reliability = (LOSS_RELIABILITY if quality.get("loss_making")
+                   else SHORT_RELIABILITY if short else earnings_reliability(quality.get("stability")))
     growth = None if short else growth_label(quality.get("growth"))
     mood = sentiment(momentum)
     positive_outlook = not short and (quality.get("stability") or 0) >= 0.75 and (quality.get("growth") or 0) > 0.03

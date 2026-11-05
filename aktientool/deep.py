@@ -23,6 +23,9 @@ log = logging.getLogger(__name__)
 FLUSH_EVERY = 25  # nach so vielen Aktien speichern (die Weltauswahl lädt dann die neuen Werte)
 RATE_LIMIT_PAUSE = 180  # Sekunden Pause, wenn Yahoo drosselt
 ERROR_RETRY = 24 * 3600  # fehlgeschlagene Aktien erst nach einem Tag erneut versuchen
+# 2: keine Gewinnstabilität bei überwiegenden Verlusten. Ältere Einträge mit Stabilität, aber ohne Gewinnwachstum
+# (typisch für Verlustreihen) werden beim nächsten Durchgang sofort erneuert statt erst nach einer Woche
+VERSION = 2
 
 _lock = threading.Lock()
 _state = {"running": False, "paused": False, "done": 0, "total": 0, "fresh": 0, "current": None, "errors": 0,
@@ -55,7 +58,7 @@ def compact(row: dict) -> dict:
     scores = row.get("scores") or {}
     rating = (row.get("rating") or {}).get("label")
     return {k: v for k, v in {
-        "t": int(time.time()),
+        "t": int(time.time()), "v": VERSION,
         "p": r(row.get("price"), 6),
         "stab": r(row.get("earnings_stability")), "growth": r(row.get("earnings_growth")),
         "years": r(row.get("quality_years"), 1), "short": bool(row.get("quality_short")),
@@ -113,6 +116,8 @@ def mtime() -> float:
 
 def _is_fresh(entry: dict | None, now: float) -> bool:
     if not entry:
+        return False
+    if "err" not in entry and entry.get("v", 1) < VERSION and entry.get("stab") is not None and entry.get("growth") is None:
         return False
     ttl = ERROR_RETRY if "err" in entry else config.TTL_DEEP
     return now - entry.get("t", 0) < ttl

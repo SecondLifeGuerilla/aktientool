@@ -1,0 +1,124 @@
+{
+  "_hinweis": "Beteiligungsgesellschaften, deren inneren Wert das Tool selbst ausrechnet: börsennotierte Beteiligungen zum aktuellen Kurs, alles andere (nicht börsennotierte Beteiligungen, Kasse, Schulden) mit dem Wert aus dem letzten Bericht. Positionen mit 'shares' = Stückzahl laut Bericht; mit 'value' = Wert am Stichtag in der Währung der Holding (das Tool rechnet die Stückzahl über den Kurs am Stichtag zurück, sinnvoll bei mehreren Aktiengattungen oder wenn nur Werte gemeldet sind). 'other' in der Währung der Holding. Eigene Änderungen aus der Oberfläche landen in data/holdings.json und gehen vor.",
+  "holdings": [
+    {
+      "symbol": "INVE-B.ST", "aliases": ["INVE-A.ST"], "name": "Investor AB", "currency": "SEK", "as_of": "2026-09-30",
+      "shares": 3063715066, "nav_reported": 1258016000000, "nav_ps_reported": 411,
+      "source": "Zwischenmitteilung Januar–September 2026 (bereinigter NAV)",
+      "url": "https://mb.cision.com/Main/1084/4409692/4321380.pdf",
+      "positions": [
+        {"name": "ABB", "symbol": "ABB.ST", "shares": 265385142},
+        {"name": "Atlas Copco (A und B)", "symbol": "ATCO-A.ST", "value": 172275000000},
+        {"name": "SEB", "symbol": "SEB-A.ST", "shares": 436198927},
+        {"name": "Saab", "symbol": "SAAB-B.ST", "shares": 163890488},
+        {"name": "AstraZeneca", "symbol": "AZN.ST", "shares": 51587810},
+        {"name": "Epiroc (A und B)", "symbol": "EPI-A.ST", "value": 54357000000},
+        {"name": "Sobi", "symbol": "SOBI.ST", "shares": 122881259},
+        {"name": "Nasdaq", "symbol": "NDAQ", "shares": 58439208},
+        {"name": "EQT", "symbol": "EQT.ST", "shares": 183288016},
+        {"name": "Wärtsilä", "symbol": "WRT1V.HE", "shares": 104441723},
+        {"name": "Ericsson (A und B)", "symbol": "ERIC-A.ST", "value": 30978000000},
+        {"name": "Electrolux (A und B)", "symbol": "ELUX-B.ST", "value": 3993000000},
+        {"name": "Husqvarna (A und B)", "symbol": "HUSQ-B.ST", "value": 3386000000},
+        {"name": "Electrolux Professional (A und B)", "symbol": "EPRO-B.ST", "value": 2642000000}
+      ],
+      "other": [
+        {"name": "Patricia Industries (u. a. Mölnlycke, Nova Biomedical, Laborie; nicht börsennotiert)", "value": 241687000000},
+        {"name": "EQT-Fonds", "value": 42110000000},
+        {"name": "Übrige Vermögenswerte und Verbindlichkeiten", "value": -4258000000},
+        {"name": "Nettoverschuldung", "value": -23661000000}
+      ]
+    },
+    {
+      "symbol": "INDU-C.ST", "aliases": ["INDU-A.ST"], "name": "Industrivärden", "currency": "SEK", "as_of": "2026-06-30",
+      "shares": 431899108, "nav_reported": 225043000000, "nav_ps_reported": 521,
+      "source": "Halbjahresbericht 2026",
+      "url": "https://storage.mfn.se/50056ea1-ff68-49a1-8543-515f405f6e65/delarsrapport-6m-2026-eng.pdf",
+      "positions": [
+        {"name": "Sandvik", "symbol": "SAND.ST", "shares": 187500000},
+        {"name": "Volvo A", "symbol": "VOLV-A.ST", "shares": 166600000},
+        {"name": "Volvo B", "symbol": "VOLV-B.ST", "shares": 29900000},
+        {"name": "Handelsbanken A", "symbol": "SHB-A.ST", "shares": 232300000},
+        {"name": "Essity A", "symbol": "ESSITY-A.ST", "shares": 29200000},
+        {"name": "Essity B", "symbol": "ESSITY-B.ST", "shares": 53000000},
+        {"name": "Ericsson A", "symbol": "ERIC-A.ST", "shares": 86052615},
+        {"name": "Ericsson B", "symbol": "ERIC-B.ST", "shares": 1000000},
+        {"name": "SCA A", "symbol": "SCA-A.ST", "shares": 30500000},
+        {"name": "SCA B", "symbol": "SCA-B.ST", "shares": 58000000},
+        {"name": "Skanska (A und B)", "symbol": "SKA-B.ST", "shares": 32167500},
+        {"name": "Alleima", "symbol": "ALLEI.ST", "shares": 54200000}
+      ],
+      "other": [
+        {"name": "Übrige Aktien", "value": 503000000},
+        {"name": "Nettoverschuldung", "value": -2334000000}
+      ]
+    },
+    {
+      "symbol": "EXO.AS", "name": "Exor", "currency": "EUR", "as_of": "2026-06-30",
+      "shares": 202735001, "nav_reported": 32009000000, "nav_ps_reported": 157.9,
+      "source": "Halbjahresbericht 2026",
+      "url": "https://exor.com/system/files/2026/document-documents/EXOR%202026%20First-Half%20Report.pdf",
+      "positions": [
+        {"name": "Ferrari", "symbol": "RACE.MI", "shares": 37768613},
+        {"name": "Philips", "symbol": "PHIA.AS", "shares": 185932684},
+        {"name": "CNH Industrial", "symbol": "CNH", "shares": 366927900},
+        {"name": "Stellantis", "symbol": "STLAM.MI", "shares": 449410092},
+        {"name": "Iveco Group", "symbol": "IVG.MI", "shares": 73385580},
+        {"name": "Juventus", "symbol": "JUVE.MI", "shares": 272634276},
+        {"name": "bioMérieux", "symbol": "BIM.PA", "value": 298000000},
+        {"name": "Via Transportation", "symbol": "VIA", "shares": 14121131},
+        {"name": "Clarivate", "symbol": "CLVT", "shares": 67294884}
+      ],
+      "other": [
+        {"name": "Lingotto (Vermögensverwaltung)", "value": 4449000000},
+        {"name": "Nicht börsennotierte Beteiligungen (u. a. Louboutin, The Economist, Institut Mérieux)", "value": 2710000000},
+        {"name": "Fonds, übrige Wertpapiere und Vermögenswerte", "value": 1681000000},
+        {"name": "Kasse", "value": 2179000000},
+        {"name": "Schulden und übrige Verbindlichkeiten", "value": -3759000000}
+      ]
+    },
+    {
+      "symbol": "GBLB.BR", "name": "Groupe Bruxelles Lambert (GBL)", "currency": "EUR", "as_of": "2026-06-30",
+      "shares": 129790612, "nav_reported": 13079000000, "nav_ps_reported": 100.77,
+      "source": "NAV-Seite von GBL (Stand Halbjahr 2026)", "url": "https://gbl.com/en/net-asset-value",
+      "note": "GBL rechnet eigene Aktien als Vermögenswert ein und teilt durch alle ausgegebenen Aktien; das Tool macht es genauso.",
+      "positions": [
+        {"name": "SGS", "symbol": "SGSN.SW", "value": 2877000000},
+        {"name": "adidas", "symbol": "ADS.DE", "value": 1140000000},
+        {"name": "Pernod Ricard", "symbol": "RI.PA", "value": 1101000000},
+        {"name": "Imerys", "symbol": "NK.PA", "value": 980000000},
+        {"name": "Recordati", "symbol": "REC.MI", "value": 349000000},
+        {"name": "Concentrix", "symbol": "CNXC", "value": 55000000},
+        {"name": "Ontex", "symbol": "ONTEX.BR", "value": 40000000},
+        {"name": "Eigene Aktien", "symbol": "GBLB.BR", "value": 820000000}
+      ],
+      "other": [
+        {"name": "Affidea (nicht börsennotiert)", "value": 2169000000},
+        {"name": "Sanoptis (nicht börsennotiert)", "value": 1208000000},
+        {"name": "GBL Capital (Private-Equity-Fonds)", "value": 950000000},
+        {"name": "Rayner (nicht börsennotiert)", "value": 442000000},
+        {"name": "Voodoo (nicht börsennotiert)", "value": 320000000},
+        {"name": "Parques Reunidos (nicht börsennotiert)", "value": 272000000},
+        {"name": "Canyon (nicht börsennotiert)", "value": 268000000},
+        {"name": "Sienna Investment Managers", "value": 46000000},
+        {"name": "Weitere Aktien (TotalEnergies, GEA)", "value": 15000000},
+        {"name": "Nettokasse", "value": 29000000}
+      ]
+    },
+    {
+      "symbol": "PAH3.DE", "name": "Porsche Automobil Holding SE", "currency": "EUR", "as_of": "2026-06-30",
+      "shares": 306250000, "nav_reported": 12500000000,
+      "source": "Halbjahresfinanzbericht 2026",
+      "url": "https://www.porsche-se.com/fileadmin/downloads/investorrelations/mandatorypublications/report-1-2009/PSE_HJ2026_E.pdf",
+      "note": "Porsche SE meldet die Werte auf 0,1 Mrd. € gerundet. Der Anteil an der Porsche AG wird zum Kurs der Vorzugsaktie plus 7,5 % Aufschlag für Stammaktien bewertet. Gezählt sind Stamm- und Vorzugsaktien der Porsche SE.",
+      "positions": [
+        {"name": "Volkswagen (53,3 % der Stammaktien)", "symbol": "VOW.DE", "value": 11500000000},
+        {"name": "Porsche AG (25 % + 1 Stammaktie)", "symbol": "P911.DE", "value": 5300000000}
+      ],
+      "other": [
+        {"name": "Portfolio-Beteiligungen (Buchwert)", "value": 682000000},
+        {"name": "Nettoverschuldung", "value": -4982000000}
+      ]
+    }
+  ]
+}

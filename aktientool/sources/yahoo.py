@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import math
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -20,7 +21,7 @@ class SymbolNotFound(Exception):
 
 
 # Aufbau der Rohdaten; ältere Cache-Dateien ohne die neueren Felder werden neu geladen
-RAW_VERSION = 2
+RAW_VERSION = 3
 
 
 INFO_KEYS = [
@@ -45,6 +46,9 @@ INCOME_MAP = {
     "ebit": ["EBIT", "Operating Income"],
     "gross_profit": ["Gross Profit"],
     "tax_rate": ["Tax Rate For Calcs"],
+    # für Margen und F&E-Quote im Abschnitt Geschäftsentwicklung
+    "operating_income": ["Operating Income", "Total Operating Income As Reported"],
+    "rnd": ["Research And Development"],
 }
 CASHFLOW_MAP = {
     "ocf": ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"],
@@ -111,6 +115,12 @@ def _statement(df: pd.DataFrame | None, mapping: dict[str, list[str]]) -> dict[s
     return out
 
 
+def isin(symbol: str) -> str | None:
+    """ISIN laut yfinance (sucht bei Business Insider und erwischt dort manchmal ein Zertifikat statt der Aktie)."""
+    value = _safe(lambda: yf.Ticker(symbol).isin)
+    return value if isinstance(value, str) and len(value) == 12 else None
+
+
 def _first_column(df: pd.DataFrame | None, mapping: dict[str, list[str]]) -> dict:
     stmt = _statement(df.iloc[:, :1] if df is not None and not df.empty else None, mapping)
     return next(iter(stmt.values()), {})
@@ -150,6 +160,38 @@ def _surprises(t: yf.Ticker) -> list[dict]:
         return []
     return [{"quarter": _day(q), "actual": _num(r.get("epsActual")), "estimate": _num(r.get("epsEstimate")),
              "surprise": _num(r.get("surprisePercent"))} for q, r in df.iterrows()]
+
+
+def _revenue_estimates(t: yf.Ticker) -> dict:
+    """Umsatzschätzungen der Analysten für das laufende und das nächste Geschäftsjahr (Bilanzwährung)."""
+    df = _safe(lambda: t.revenue_estimate)
+    out = {}
+    if df is None or df.empty:
+        return out
+    for period in ("0y", "+1y"):
+        if period not in df.index:
+            continue
+        r = df.loc[period]
+        analysts = _num(r.get("numberOfAnalysts"))
+        if not analysts or not _num(r.get("avg")):
+            continue
+        out[period] = {
+            "avg": _num(r.get("avg")), "low": _num(r.get("low")), "high": _num(r.get("high")), "analysts": analysts,
+            "year_ago": _num(r.get("yearAgoRevenue")), "growth": _num(r.get("growth")),
+            "currency": r.get("currency") if isinstance(r.get("currency"), str) else None,
+        }
+    return out
+
+
+def _holders(t: yf.Ticker) -> dict:
+    """Anteil von Insidern und institutionellen Anlegern an den Aktien."""
+    df = _safe(lambda: t.major_holders)
+    if df is None or df.empty or "Value" not in df.columns:
+        return {}
+    values = {str(k): _num(v) for k, v in df["Value"].items()}
+    return {k: values.get(src) for k, src in (("insiders", "insidersPercentHeld"), ("institutions", "institutionsPercentHeld"),
+                                              ("institutions_float", "institutionsFloatPercentHeld"),
+                                              ("institutions_count", "institutionsCount"))}
 
 
 def _insider(t: yf.Ticker) -> dict:
@@ -257,14 +299,49 @@ def load(symbol: str, light: bool = False) -> dict:
         "isin": isin if isinstance(isin, str) and len(isin) == 12 else None,
         "surprises": _surprises(t),
         "insider": _insider(t),
+        "revenue_estimates": _revenue_estimates(t),
+        "holders": _holders(t),
     })
     return out
 
 
-def fx_history(pair: str) -> list[list]:
-    """Monatliche Schlusskurse eines Währungspaars wie 'DKKUSD=X'."""
-    hist = yf.Ticker(pair).history(period="max", interval="1mo", auto_adjust=False)
+def closes(symbol: str, period: str = "1y") -> list[float]:
+    """Tägliche Schlusskurse (um Splits bereinigt) für die Volatilität im Call/Put-Rechner."""
+    hist = yf.Ticker(symbol).history(period=period, auto_adjust=False)
+    if hist is None or hist.empty:
+        raise SymbolNotFound(symbol)
+    return [float(c) for c in hist["Close"] if pd.notna(c) and c > 0]
+
+
+def daily_closes(symbol: str, period: str = "5y") -> list[list]:
+    """Tägliche Schlusskurse [[JJJJ-MM-TT, Kurs], …], um Splits bereinigt (nicht um Dividenden)."""
+    hist = yf.Ticker(symbol).history(period=period, auto_adjust=False)
     if hist is None or hist.empty:
         return []
     idx = hist.index.tz_localize(None) if hist.index.tz is not None else hist.index
     return [[_day(d), float(c)] for d, c in zip(idx, hist["Close"]) if pd.notna(c) and c > 0]
+
+
+def close_on(symbol: str, day: str) -> float | None:
+    """Schlusskurs am Tag `day` (JJJJ-MM-TT) oder am letzten Handelstag davor, um Splits bereinigt."""
+    end = pd.Timestamp(day) + pd.Timedelta(days=1)
+    hist = yf.Ticker(symbol).history(start=end - pd.Timedelta(days=12), end=end, auto_adjust=False)
+    if hist is None or hist.empty:
+        return None
+    close = [float(c) for c in hist["Close"] if pd.notna(c) and c > 0]
+    return close[-1] if close else None
+
+
+def fx_history(pair: str, interval: str = "1mo") -> list[list]:
+    """Schlusskurse eines Währungspaars wie 'DKKUSD=X' (monatlich oder mit interval='1d' täglich)."""
+    hist = yf.Ticker(pair).history(period="max", interval=interval, auto_adjust=False)
+    if hist is None or hist.empty:
+        return []
+    idx = hist.index.tz_localize(None) if hist.index.tz is not None else hist.index
+    close = hist["Close"].where(hist["Close"] > 0)
+    if interval == "1d":
+        # Yahoo hat vereinzelt Ausreißer-Tage (EUR/USD am 08.10.2008: 1,50 statt 1,36), die sofort zurückspringen.
+        # Weicht ein Tag mehr als 5 % vom Median seiner Umgebung ab, gilt der Median; echte Sprünge bleiben erhalten.
+        median = close.rolling(5, center=True, min_periods=1).median()
+        close = close.where((np.log(close / median)).abs() <= 0.05, median)
+    return [[_day(d), float(c)] for d, c in zip(idx, close) if pd.notna(c) and c > 0]

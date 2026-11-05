@@ -1,35 +1,46 @@
 // Screener und Watchlist: Kennzahlen für eine Liste von Aktien laden, filtern und sortieren
 import { api, getWatchlist, toggleWatch } from "./api.js";
+import { trackBrowse } from "./browse.js";
+import { NOT_TR_TAG } from "./broker.js";
+import { csvNum, downloadCsv, today } from "./csv.js";
 import * as F from "./format.js";
 import { term } from "./glossary.js";
+import { isBasic } from "./mode.js";
+import { toast } from "./toast.js";
+import { flipWatch } from "./watch.js";
+import { childrenOf, clone, flatten, getGroups, groupsOf, openAssign, openManage, pathLabel, saveWithUndo, symbolsIn, topAncestor, ungrouped,
+  descendantIds } from "./watchgroups.js";
+import { presetHref } from "./world.js";
 
 const esc = F.escapeHtml;
 const CONCURRENCY = 3;
 const CUSTOM = "Eigene Liste";
 const STRATEGIES = [["earnings_growth", "Gewinnwachstum"], ["dividend_growth", "Dividendenwachstum"], ["dividend_income", "Dividendenertrag"]];
 
+// basic: Spalte bzw. Filter gibt es auch in der Basis-Ansicht
 const COLUMNS = [
-  { key: "name", label: "Aktie", get: (r) => r.name?.toLowerCase() },
+  { key: "pick", label: "", basic: true, get: () => null },
+  { key: "name", label: "Aktie", basic: true, get: (r) => r.name?.toLowerCase() },
   { key: "country", label: "Land", get: (r) => r.country },
-  { key: "market_cap", label: "Börsenwert", term: "boersenwert", get: (r) => r.market_cap },
-  { key: "earnings_stability", label: "Gewinn­stabilität", term: "gewinnstabilitaet", get: (r) => r.earnings_stability },
-  { key: "earnings_growth", label: "Gewinn­wachstum p. a.", term: "wachstum_pa", get: (r) => r.earnings_growth },
-  { key: "div_yield", label: "Div.-Rendite", term: "dividendenrendite", get: (r) => r.div_yield },
+  { key: "market_cap", label: "Börsenwert", term: "boersenwert", basic: true, get: (r) => r.market_cap },
+  { key: "earnings_stability", label: "Gewinn­stabilität", term: "gewinnstabilitaet", basic: true, get: (r) => r.earnings_stability },
+  { key: "earnings_growth", label: "Gewinn­wachstum p. a.", term: "wachstum_pa", basic: true, get: (r) => r.earnings_growth },
+  { key: "div_yield", label: "Div.-Rendite", term: "dividendenrendite", basic: true, get: (r) => r.div_yield },
   { key: "div_growth", label: "Div.-Wachstum p. a.", term: "dividendenwachstum", get: (r) => r.div_growth },
   { key: "payout", label: "Ausschüttung", term: "ausschuettungsquote", get: (r) => r.payout },
   { key: "debt_years", label: "Tilgungs­jahre", term: "tilgungsjahre", get: (r) => (r.debt_infinite ? Infinity : r.debt_years) },
   { key: "momentum", label: "Momentum", term: "momentum", get: (r) => r.momentum },
-  { key: "deviation", label: "Kurs vs. fairer Wert", term: "fairer_wert", get: (r) => r.deviation },
-  { key: "expected_return", label: "Erw. Rendite p. a.", term: "erwartete_rendite", get: (r) => r.expected_return },
+  { key: "deviation", label: "Kurs vs. fairer Wert", term: "fairer_wert", basic: true, get: (r) => r.deviation },
+  { key: "expected_return", label: "Erw. Rendite p. a.", term: "erwartete_rendite", basic: true, get: (r) => r.expected_return },
   { key: "piotroski", label: "Piotroski", term: "piotroski", get: (r) => r.piotroski },
   { key: "score", label: "Scores", term: "scorecard", get: (r, s) => r.scores?.[s.strategy] },
-  { key: "watch", label: "", get: () => null },
+  { key: "watch", label: "", basic: true, get: () => null },
 ];
 
 const FILTERS = [
-  { id: "f-stab", label: "Gewinnstabilität ab", placeholder: "z. B. 0,8", test: (r, v) => (r.earnings_stability ?? -9) >= v },
-  { id: "f-growth", label: "Gewinnwachstum ab %", placeholder: "z. B. 5", pct: true, test: (r, v) => (r.earnings_growth ?? -9) >= v },
-  { id: "f-yield", label: "Div.-Rendite ab %", placeholder: "z. B. 2", pct: true, test: (r, v) => (r.div_yield ?? 0) >= v },
+  { id: "f-stab", label: "Gewinnstabilität ab", placeholder: "z. B. 0,8", basic: true, test: (r, v) => (r.earnings_stability ?? -9) >= v },
+  { id: "f-growth", label: "Gewinnwachstum ab %", placeholder: "z. B. 5", pct: true, basic: true, test: (r, v) => (r.earnings_growth ?? -9) >= v },
+  { id: "f-yield", label: "Div.-Rendite ab %", placeholder: "z. B. 2", pct: true, basic: true, test: (r, v) => (r.div_yield ?? 0) >= v },
   { id: "f-payout", label: "Ausschüttung bis %", placeholder: "z. B. 70", pct: true, test: (r, v) => r.payout == null || r.payout <= v },
   { id: "f-debt", label: "Tilgungsjahre bis", placeholder: "z. B. 4", test: (r, v) => !r.debt_infinite && (r.debt_years == null || r.debt_years <= v) },
   { id: "f-score", label: "Score ab", placeholder: "1–10", test: (r, v, s) => (r.scores?.[s.strategy] ?? 0) >= v },
@@ -39,6 +50,22 @@ function parseNum(s) {
   if (s == null || String(s).trim() === "") return null;
   const n = Number(String(s).replace(",", "."));
   return Number.isFinite(n) ? n : null;
+}
+
+// Leere Watchlist: Wege zu den ersten Kandidaten
+function emptyWatchlist() {
+  return `Die Watchlist ist leer. Merken Sie sich Kandidaten mit ☆ in der Weltauswahl oder mit „Zur Watchlist“ im Aktienprofil. Gute Startpunkte:
+    <div class="preset-row" style="margin:8px 0 4px">${["Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten"]
+      .map((n) => `<a class="btn" href="${esc(presetHref(n))}">${esc(n)}</a>`).join("")}</div>`;
+}
+
+// Watchlist-Gruppen: gewählte Gruppe, Gliederung und eingeklappte Abschnitte merkt sich der Browser (nur Komfort)
+const NONE = "_ohne";
+function readPref(key, fallback) {
+  try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
+}
+function savePref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* nur Komfort */ }
 }
 
 function readCustom() {
@@ -58,15 +85,18 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     saveCustom(customText);
   }
   root.innerHTML = '<div class="loading-block"><div class="spinner"></div>Lade Listen …</div>';
-  let presets, watch;
+  let presets, watch, groups = [];
+  const isWatch = listName === "Watchlist";
   try {
-    [presets, watch] = await Promise.all([api.presets(), getWatchlist()]);
+    [presets, watch, groups] = await Promise.all([api.presets(), getWatchlist(), isWatch ? getGroups() : []]);
   } catch (e) {
     if (isCurrent()) root.innerHTML = `<div class="error-block">${esc(e.message)}</div>`;
     return;
   }
   if (!isCurrent()) return;
-  const isWatch = listName === "Watchlist";
+  const basic = isBasic();
+  const cols = basic ? COLUMNS.filter((c) => c.basic) : COLUMNS;
+  const filters = basic ? FILTERS.filter((f) => f.basic) : FILTERS;
   document.title = `${isWatch ? "Watchlist" : "Screener"} – Aktientool`;
   const lists = ["Watchlist", ...Object.keys(presets), CUSTOM];
   if (!lists.includes(listName)) listName = "Watchlist";
@@ -82,12 +112,13 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
       <div class="filters">
         <div class="field"><label for="list-select">Liste</label>
           <select id="list-select">${lists.map((l) => `<option ${l === listName ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
-        <div class="field"><label for="strategy-select">${term("scorecard", "Score-Strategie")}</label>
-          <select id="strategy-select">${STRATEGIES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
-        ${FILTERS.map((f) => `<div class="field"><label for="${f.id}">${f.label}</label><input id="${f.id}" inputmode="decimal" placeholder="${f.placeholder}"></div>`).join("")}
+        ${basic ? "" : `<div class="field"><label for="strategy-select">${term("scorecard", "Score-Strategie")}</label>
+          <select id="strategy-select">${STRATEGIES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>`}
+        ${filters.map((f) => `<div class="field"><label for="${f.id}">${f.label}</label><input id="${f.id}" inputmode="decimal" placeholder="${f.placeholder}"></div>`).join("")}
         <div class="field"><label for="f-val">Bewertung</label>
           <select id="f-val"><option value="">alle</option><option value="0.1">höchstens fair (bis +10 %)</option><option value="-0.1">unterbewertet (unter −10 %)</option></select></div>
         <button class="btn" id="reset-btn" type="button">Filter zurücksetzen</button>
+        <button class="btn" id="csv-btn" type="button" title="Die angezeigten Zeilen mit allen geladenen Kennzahlen als CSV-Datei (für Excel & Co.)">CSV</button>
         <div class="field" id="custom-field" style="flex-basis:100%" ${listName === CUSTOM ? "" : "hidden"}>
           <label for="custom-input">Ticker, getrennt durch Komma oder Leerzeichen (Yahoo-Schreibweise, z. B. ALV.DE, NESN.SW, ULVR.L)</label>
           <textarea id="custom-input" placeholder="AAPL, MSFT, ALV.DE">${esc(customText)}</textarea>
@@ -97,28 +128,39 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
       <div class="progress"><div id="progress-bar"></div></div>
       <div class="muted" id="status-line" style="margin-top:6px;font-size:13px"></div>
     </div>
+    ${isWatch ? '<div class="card grp-bar" id="grp-bar" style="margin-top:12px"></div>' : ""}
     <div class="card table-scroll" style="margin-top:12px;padding:8px 8px 4px">
       <table class="data screener">
-        <thead><tr>${COLUMNS.map((c) => `<th data-key="${c.key}" scope="col">${c.term ? term(c.term, c.label) : c.label}</th>`).join("")}</tr></thead>
+        <thead><tr>${cols.map((c) => (c.key === "pick"
+          ? '<th class="pick" scope="col"><input type="checkbox" id="pick-all" title="Alle angezeigten Zeilen auswählen" aria-label="Alle angezeigten Zeilen auswählen"></th>'
+          : `<th data-key="${c.key}" scope="col">${c.term ? term(c.term, c.label) : c.label}</th>`)).join("")}</tr></thead>
         <tbody id="rows"></tbody>
       </table>
-    </div>`;
+    </div>
+    <div class="select-bar" id="select-bar" hidden></div>`;
 
-  const state = { strategy: "earnings_growth", sortKey: "score", sortDir: -1, rows: new Map(), symbols: [] };
+  const state = { strategy: "earnings_growth", sortKey: basic ? "expected_return" : "score", sortDir: -1, rows: new Map(), symbols: [],
+    group: readPref("watchGroup", ""), outline: readPref("watchOutline", true), collapsed: new Set(readPref("watchGroupsCollapsed", [])) };
   const $ = (sel) => root.querySelector(sel);
+  const groupExists = (id) => !id || id === NONE || groups.some((g) => g.id === id);
+  if (!groupExists(state.group)) state.group = "";
+  const groupName = (id) => (id === NONE ? "Ohne Gruppe" : pathLabel(groups, id));
+  // Ticker der gewählten Gruppe (samt Untergruppen) oder null für alle
+  const groupSet = () => (!isWatch || !state.group ? null : state.group === NONE ? new Set(ungrouped(groups, watch)) : symbolsIn(groups, state.group, watch));
 
   const symbolsFor = (name) => (name === "Watchlist" ? [...watch] : name === CUSTOM ? parseTickers($("#custom-input").value) : presets[name] || []);
 
   function filtered() {
-    const vals = FILTERS.map((f) => {
+    const vals = filters.map((f) => {
       const n = parseNum($(`#${f.id}`).value);
       return n == null ? null : f.pct ? n / 100 : n;
     });
     const val = parseNum($("#f-val").value);
-    return state.symbols.map((s) => state.rows.get(s)).filter((row) => {
+    const only = groupSet();
+    return state.symbols.filter((s) => !only || only.has(s)).map((s) => state.rows.get(s)).filter((row) => {
       if (row.status !== "ok") return true;
       const r = row.data;
-      if (FILTERS.some((f, i) => vals[i] != null && !f.test(r, vals[i], state))) return false;
+      if (filters.some((f, i) => vals[i] != null && !f.test(r, vals[i], state))) return false;
       if (val != null && !(r.deviation != null && r.deviation <= val)) return false;
       return true;
     });
@@ -126,7 +168,17 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
 
   function cell(c, r) {
     switch (c.key) {
-      case "name": return `<td class="name"><a href="#/aktie/${encodeURIComponent(r.symbol)}">${esc(r.name)}</a><span class="sym">${esc(r.symbol)}</span></td>`;
+      case "pick": return `<td class="pick"><input type="checkbox" data-pick="${esc(r.symbol)}" ${picked.has(r.symbol) ? "checked" : ""} aria-label="${esc(r.name)} auswählen"></td>`;
+      case "name": {
+        const tags = r.tr === false ? [NOT_TR_TAG] : [];
+        if (isWatch) {
+          const gs = groupsOf(groups, r.symbol);
+          tags.push(...gs.map((g) => `<button type="button" class="tag grp" data-group="${esc(g.id)}" title="Nur diese Gruppe zeigen">${esc(pathLabel(groups, g.id))}</button>`),
+            `<button type="button" class="linklike grp-add" data-assign="${esc(r.symbol)}">${gs.length ? "Gruppen ändern" : "+ Gruppe"}</button>`);
+        }
+        return `<td class="name"><a href="#/aktie/${encodeURIComponent(r.symbol)}">${esc(r.name)}</a><span class="sym">${esc(r.symbol)}</span>${
+          tags.length ? `<div class="tags">${tags.join("")}</div>` : ""}</td>`;
+      }
       case "country": return `<td>${esc(r.country || "–")}</td>`;
       case "market_cap": return `<td>${F.big(r.market_cap, r.currency)}</td>`;
       case "earnings_stability": {
@@ -172,14 +224,21 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
       if (vb == null) return -1;
       return (va > vb ? 1 : va < vb ? -1 : 0) * state.sortDir;
     });
-    const html = ok.map((x) => `<tr>${COLUMNS.map((c) => cell(c, x.data)).join("")}</tr>`);
+    shownOk = ok.map((x) => x.data);
+    const rowHtml = (x) => `<tr${picked.has(x.data.symbol) ? ' class="picked"' : ""}>${cols.map((c) => cell(c, x.data)).join("")}</tr>`;
+    const html = outlined() ? sectionsHtml(ok, rowHtml) : ok.map(rowHtml);
     for (const x of rest) {
       const cls = x.status === "error" ? "failed" : "loading";
       const msg = x.status === "error" ? esc(x.error) : "wird geladen …";
-      html.push(`<tr class="${cls}"><td class="name">${esc(x.symbol)}</td><td colspan="${COLUMNS.length - 1}" style="text-align:left">${msg}</td></tr>`);
+      html.push(`<tr class="${cls}"><td class="name">${esc(x.symbol)}</td><td colspan="${cols.length - 1}" style="text-align:left">${msg}</td></tr>`);
     }
-    $("#rows").innerHTML = html.join("") || `<tr><td colspan="${COLUMNS.length}" style="text-align:left" class="muted">${
-      state.symbols.length ? "Keine Aktie erfüllt alle Filter." : isWatch ? "Die Watchlist ist leer. Suchen Sie oben eine Aktie und fügen Sie sie im Profil hinzu." : "Die Liste ist leer."}</td></tr>`;
+    const only = groupSet();
+    $("#rows").innerHTML = html.join("") || `<tr><td colspan="${cols.length}" style="text-align:left;white-space:normal" class="muted">${
+      !state.symbols.length ? (isWatch ? emptyWatchlist() : "Die Liste ist leer.")
+        : only && !only.size ? (state.group === NONE ? "Alle Aktien der Watchlist stehen in mindestens einer Gruppe."
+          : `In „${esc(groupName(state.group))}“ stehen noch keine Aktien. Wählen Sie unter „Alle“ Aktien aus (Häkchen vorn) und teilen Sie sie
+            mit „In Gruppe einteilen …“ ein, oder klicken Sie in einer Zeile auf „+ Gruppe“.`)
+        : "Keine Aktie erfüllt alle Filter."}</td></tr>`;
     root.querySelectorAll("th[data-key]").forEach((th) => {
       th.setAttribute("aria-sort", th.dataset.key === state.sortKey ? (state.sortDir > 0 ? "ascending" : "descending") : "none");
     });
@@ -189,6 +248,110 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     $("#status-line").textContent = state.symbols.length
       ? `${done} von ${state.symbols.length} geladen${failed ? `, ${failed} fehlgeschlagen` : ""} · ${ok.length} angezeigt`
       : "";
+    $("#pick-all").checked = shownOk.length > 0 && shownOk.every((r) => picked.has(r.symbol));
+    paintSelect();
+  }
+
+  // ---- Gruppen: Leiste oberhalb der Tabelle und gegliederte Anzeige mit Zwischenüberschriften
+  const outlined = () => isWatch && state.outline && groups.length > 0 && state.group !== NONE;
+
+  // ok: sortierte Zeilen; eine Aktie in mehreren Gruppen erscheint in jedem ihrer Abschnitte
+  function sectionsHtml(ok, rowHtml) {
+    const shown = new Set(ok.map((x) => x.data.symbol));
+    const list = state.group
+      ? [{ g: groups.find((g) => g.id === state.group), depth: 0 }, ...flatten(groups, state.group).map(({ g, depth }) => ({ g, depth: depth + 1 }))]
+      : flatten(groups);
+    const out = [];
+    const hiddenBelow = new Set(); // Ids eingeklappter Gruppen samt Untergruppen
+    const head = (id, label, depth, n, own) => {
+      const open = !state.collapsed.has(id);
+      return `<tr class="grp-head" style="--d:${depth}"><td colspan="${cols.length}"><button type="button" class="grp-toggle" data-collapse="${esc(id)}"
+        aria-expanded="${open}" title="${open ? "Einklappen" : "Ausklappen"}">${open ? "▾" : "▸"}</button><b>${esc(label)}</b>
+        <span class="muted">${F.int(n)} ${n === 1 ? "Aktie" : "Aktien"}${own != null && own !== n ? `, davon ${F.int(own)} direkt` : ""}</span>
+        ${id !== NONE && id !== state.group ? `<button type="button" class="linklike" data-group="${esc(id)}">nur diese zeigen</button>` : ""}</td></tr>`;
+    };
+    for (const { g, depth } of list) {
+      if (hiddenBelow.has(g.id)) continue;
+      const total = [...symbolsIn(groups, g.id, watch)].filter((s) => shown.has(s)).length;
+      if (!total) continue;
+      const direct = ok.filter((x) => g.symbols.includes(x.data.symbol));
+      out.push(head(g.id, g.name, depth, total, direct.length));
+      if (state.collapsed.has(g.id)) { descendantIds(groups, g.id).forEach((id) => hiddenBelow.add(id)); continue; }
+      out.push(...direct.map(rowHtml));
+    }
+    if (!state.group) {
+      const loose = new Set(ungrouped(groups, watch));
+      const rest = ok.filter((x) => loose.has(x.data.symbol));
+      if (rest.length) {
+        out.push(head(NONE, "Ohne Gruppe", 0, rest.length, null));
+        if (!state.collapsed.has(NONE)) out.push(...rest.map(rowHtml));
+      }
+    }
+    return out;
+  }
+
+  function paintGroupBar() {
+    if (!isWatch) return;
+    const chip = (val, label, n, title = "") => `<button type="button" class="btn small grp-chip" data-group="${esc(val)}" aria-pressed="${state.group === val}"
+      ${title ? `title="${esc(title)}"` : ""}>${esc(label)} <span class="grp-n">${F.int(n)}</span></button>`;
+    const top = state.group && state.group !== NONE ? topAncestor(groups, state.group) : null;
+    const subs = top ? flatten(groups, top.id) : [];
+    $("#grp-bar").innerHTML = `
+      <div class="grp-row">
+        <span class="field-label">Gruppen</span>
+        ${chip("", "Alle", watch.size)}
+        ${childrenOf(groups, null).map((g) => chip(g.id, g.name, symbolsIn(groups, g.id, watch).size)).join("")}
+        ${groups.length ? chip(NONE, "Ohne Gruppe", ungrouped(groups, watch).length, "Aktien, die noch in keiner Gruppe stehen") : ""}
+        <span class="grp-spacer"></span>
+        ${groups.length ? `<label class="grp-outline" title="Tabelle mit Zwischenüberschriften je Gruppe und Untergruppe"><input type="checkbox" id="grp-outline"
+          ${state.outline ? "checked" : ""}> nach Gruppen gliedern</label>` : ""}
+        <button type="button" class="btn small" id="grp-manage">${groups.length ? "Gruppen verwalten" : "Gruppen anlegen"}</button>
+      </div>
+      ${subs.length ? `<div class="grp-row sub"><span class="field-label">${esc(top.name)} ›</span>${subs.map(({ g, depth }) =>
+        chip(g.id, `${"› ".repeat(depth)}${g.name}`, symbolsIn(groups, g.id, watch).size)).join("")}</div>` : ""}
+      ${groups.length ? "" : `<p class="muted grp-hint">Viele Aktien im Blick? Teilen Sie sie in Gruppen und Untergruppen ein: frei benannt, aus Vorlagen
+        (etwa Kaufkandidaten, Dividende, Wachstum) oder automatisch nach Sektor und Branche, Land, Bewertung, Dividende oder Größe.</p>`}`;
+  }
+
+  function setGroup(id) {
+    state.group = groupExists(id) ? id : "";
+    savePref("watchGroup", state.group);
+    paintGroupBar();
+    paint();
+  }
+
+  // ---- Mehrfachauswahl: vergleichen, von der Watchlist nehmen bzw. auf die Watchlist setzen
+  const picked = new Set();
+  let shownOk = [];
+  function paintSelect() {
+    const bar = $("#select-bar");
+    const n = picked.size;
+    bar.hidden = n === 0;
+    if (!n) return;
+    const canCompare = n >= 2 && n <= 4;
+    bar.innerHTML = `<b>${F.int(n)} ausgewählt</b>
+      <button class="btn small primary" type="button" data-act="compare" ${canCompare ? "" : "disabled"}
+        title="${canCompare ? "Die ausgewählten Aktien nebeneinander vergleichen" : "Zum Vergleichen 2 bis 4 Aktien auswählen"}">Vergleichen</button>
+      ${isWatch ? `<button class="btn small" type="button" data-act="group">In Gruppe einteilen …</button>
+        ${state.group && state.group !== NONE ? `<button class="btn small" type="button" data-act="ungroup">Aus „${esc(groupName(state.group))}“ nehmen</button>` : ""}
+        <button class="btn small" type="button" data-act="unwatch">Von der Watchlist nehmen</button>`
+        : '<button class="btn small" type="button" data-act="watch">Auf die Watchlist</button>'}
+      <button class="linklike" type="button" data-act="clear">Auswahl aufheben</button>`;
+  }
+
+  // ---- CSV: angezeigte Zeilen in der angezeigten Reihenfolge, Prozentwerte als Zahl
+  function exportCsv() {
+    const pct = (v) => csvNum(F.isNum(v) ? v * 100 : null, 2);
+    const header = ["Name", "Ticker", "Land", "Währung", "Börsenwert", "Gewinnstabilität", "Gewinnwachstum p. a. (%)", "Div.-Rendite (%)",
+      "Div.-Wachstum p. a. (%)", "Ausschüttung (%)", "Tilgungsjahre", "Momentum (%)", "Kurs vs. fairer Wert (%)", "Erw. Rendite p. a. (%)",
+      "Piotroski", ...STRATEGIES.map(([, l]) => `Score ${l}`), "Geschäftsjahre", ...(isWatch ? ["Gruppen"] : [])];
+    const rows = shownOk.map((r) => [r.name, r.symbol, r.country || "", r.currency || "", csvNum(r.market_cap, 0), csvNum(r.earnings_stability, 3),
+      pct(r.earnings_growth), pct(r.div_yield), pct(r.div_growth), pct(r.payout), r.debt_infinite ? "unendlich" : csvNum(r.debt_years, 2),
+      pct(r.momentum), pct(r.deviation), pct(r.expected_return), r.piotroski ?? "", ...STRATEGIES.map(([k]) => r.scores?.[k] ?? ""),
+      r.fundamental_points ?? "", ...(isWatch ? [groupsOf(groups, r.symbol).map((g) => pathLabel(groups, g.id)).join("; ")] : [])]);
+    if (!rows.length) { toast("Noch keine Zeilen geladen."); return; }
+    downloadCsv(`${isWatch ? "watchlist" : `screener-${listName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}-${today()}.csv`, header, rows);
+    toast(`${F.int(rows.length)} Zeilen als CSV gespeichert (Ordner „Downloads“).`, { kind: "good" });
   }
 
   let loadToken = 0;
@@ -221,7 +384,7 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
   }
 
   $("#list-select").addEventListener("change", (e) => { location.hash = `#/screener?list=${encodeURIComponent(e.target.value)}`; });
-  $("#strategy-select").addEventListener("change", (e) => { state.strategy = e.target.value; paint(); });
+  $("#strategy-select")?.addEventListener("change", (e) => { state.strategy = e.target.value; paint(); });
   root.querySelectorAll(".filters input, #f-val").forEach((el) => el.addEventListener("input", paint));
   $("#reset-btn").addEventListener("click", () => {
     root.querySelectorAll(".filters input").forEach((el) => { el.value = ""; });
@@ -231,7 +394,7 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
   $("#custom-load")?.addEventListener("click", () => { saveCustom($("#custom-input").value); load(symbolsFor(CUSTOM)); });
   root.querySelector("thead").addEventListener("click", (e) => {
     const th = e.target.closest("th[data-key]");
-    if (!th || th.dataset.key === "watch") return;
+    if (!th || th.dataset.key === "watch" || th.dataset.key === "pick") return;
     if (state.sortKey === th.dataset.key) state.sortDir *= -1;
     else { state.sortKey = th.dataset.key; state.sortDir = th.dataset.key === "name" || th.dataset.key === "country" || th.dataset.key === "debt_years" ? 1 : -1; }
     paint();
@@ -240,10 +403,116 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     const b = e.target.closest("button[data-watch]");
     if (!b) return;
     b.disabled = true;
-    await toggleWatch(b.dataset.watch);
-    watch = await getWatchlist();
+    const sym = b.dataset.watch;
+    try {
+      await flipWatch(sym, state.rows.get(sym)?.data?.name, async () => { watch = await getWatchlist(); if (isCurrent()) { paintGroupBar(); paint(); } });
+    } catch (err) { toast(err.message, { kind: "bad" }); b.disabled = false; }
+  });
+  $("#rows").addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-pick]");
+    if (!cb) return;
+    if (cb.checked) picked.add(cb.dataset.pick); else picked.delete(cb.dataset.pick);
+    if (outlined()) { paint(); return; } // dieselbe Aktie kann in mehreren Abschnitten stehen
+    cb.closest("tr").classList.toggle("picked", cb.checked);
+    $("#pick-all").checked = shownOk.length > 0 && shownOk.every((r) => picked.has(r.symbol));
+    paintSelect();
+  });
+  $("#pick-all").addEventListener("change", (e) => {
+    for (const r of shownOk) { if (e.target.checked) picked.add(r.symbol); else picked.delete(r.symbol); }
     paint();
   });
+  $("#select-bar").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const syms = [...picked];
+    const act = b.dataset.act;
+    if (act === "clear") { picked.clear(); paint(); return; }
+    if (act === "compare") { location.hash = `#/vergleich?s=${encodeURIComponent(syms.join(","))}`; return; }
+    if (act === "group") {
+      const one = syms.length === 1 ? state.rows.get(syms[0])?.data?.name || syms[0] : null;
+      await openAssign(syms, one ? `Gruppen für ${one}` : `${F.int(syms.length)} Aktien in Gruppen einteilen`);
+      return;
+    }
+    if (act === "ungroup") {
+      const ids = new Set(descendantIds(groups, state.group));
+      const next = clone(groups);
+      for (const g of next) if (ids.has(g.id)) g.symbols = g.symbols.filter((s) => !picked.has(s));
+      const label = groupName(state.group);
+      try { await saveWithUndo(clone(groups), next, `${F.int(syms.length)} ${syms.length === 1 ? "Aktie" : "Aktien"} aus „${label}“ genommen.`, null); }
+      catch (err) { toast(err.message, { kind: "bad" }); }
+      return;
+    }
+    // auf die Watchlist bzw. herunter: nur die, bei denen sich etwas ändert; „Rückgängig“ dreht genau diese zurück
+    const change = syms.filter((s) => (act === "watch" ? !watch.has(s) : watch.has(s)));
+    if (!change.length) { toast(act === "watch" ? "Alle ausgewählten Aktien stehen schon auf der Watchlist." : "Keine der ausgewählten Aktien steht auf der Watchlist."); return; }
+    b.disabled = true;
+    try { for (const s of change) await toggleWatch(s); } catch (err) { toast(err.message, { kind: "bad" }); }
+    watch = await getWatchlist();
+    paintGroupBar();
+    if (act === "unwatch") {
+      for (const s of change) picked.delete(s);
+      // die Watchlist-Seite zeigt nur gemerkte Aktien: entfernte Zeilen verschwinden sofort
+      state.symbols = state.symbols.filter((s) => watch.has(s));
+    }
+    if (isCurrent()) paint();
+    const n = change.length;
+    toast(`${F.int(n)} ${n === 1 ? "Aktie" : "Aktien"} ${act === "watch" ? "auf die Watchlist gesetzt" : "von der Watchlist genommen"}.`, {
+      kind: act === "watch" ? "good" : "",
+      action: "Rückgängig",
+      onAction: async () => {
+        for (const s of change) await toggleWatch(s);
+        watch = await getWatchlist();
+        if (isCurrent()) paintGroupBar();
+        if (act === "unwatch" && isCurrent()) { load([...watch]); return; }
+        if (isCurrent()) paint();
+      },
+    });
+  });
+  $("#csv-btn").addEventListener("click", exportCsv);
+  trackBrowse($("#rows"), () => (isWatch ? `Watchlist${state.group ? `: ${groupName(state.group)}` : ""}` : `Screener: ${listName}`),
+    () => shownOk.map((r) => [r.symbol, r.name]));
+
+  if (isWatch) {
+    // Gruppen wählen (Leiste, Schlagwort in der Zeile, Zwischenüberschrift), einklappen, zuordnen, verwalten
+    const onGroupClick = async (e) => {
+      const pick = e.target.closest("[data-group]");
+      if (pick) { setGroup(pick.dataset.group); return; }
+      const fold = e.target.closest("[data-collapse]");
+      if (fold) {
+        const id = fold.dataset.collapse;
+        if (state.collapsed.has(id)) state.collapsed.delete(id); else state.collapsed.add(id);
+        savePref("watchGroupsCollapsed", [...state.collapsed]);
+        paint();
+        return;
+      }
+      const assign = e.target.closest("[data-assign]");
+      if (assign) {
+        const sym = assign.dataset.assign;
+        await openAssign([sym], `Gruppen für ${state.rows.get(sym)?.data?.name || sym}`);
+        return;
+      }
+      if (e.target.closest("#grp-manage")) await openManage(state.symbols.map((s) => state.rows.get(s)).filter((x) => x?.status === "ok").map((x) => x.data), watch);
+    };
+    // an die Elemente der Seite gehängt, nicht an root: root bleibt über Seitenwechsel hinweg dasselbe Element
+    $("#grp-bar").addEventListener("click", onGroupClick);
+    $("#rows").addEventListener("click", onGroupClick);
+    $("#grp-bar").addEventListener("change", (e) => {
+      if (e.target.id !== "grp-outline") return;
+      state.outline = e.target.checked;
+      savePref("watchOutline", state.outline);
+      paint();
+    });
+    // jede gespeicherte Änderung (auch „Rückgängig“ aus einer Meldung) zeichnet Leiste und Tabelle neu
+    const onGroups = async () => {
+      if (!isCurrent()) { document.removeEventListener("watchgroups-changed", onGroups); return; }
+      groups = await getGroups();
+      if (!groupExists(state.group)) state.group = "";
+      paintGroupBar();
+      paint();
+    };
+    document.addEventListener("watchgroups-changed", onGroups);
+    paintGroupBar();
+  }
 
   load(symbolsFor(listName));
 }

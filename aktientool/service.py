@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .analysis import dcf, fundamentals, metrics, scorecard, summary, tax, valuation
+from .analysis import business, dcf, fundamentals, metrics, scorecard, summary, tax, valuation
 from .analysis import dividends as dividends_mod
 from .cache import cache_age, cached, peek
 from .names import SECTORS, industry_de
@@ -55,7 +55,9 @@ def _clean(obj):
 
 
 def _per_share_row(src: dict, end: str, flow_ccy: str | None, eps_ccy: str | None,
-                   conv: fx.Converter, source: str) -> dict:
+                   conv: fx.Converter, source: str, fin: fx.Converter) -> dict:
+    """Werte je Aktie in Kurswährung (`conv`), Umsatz, Ergebnisse und F&E zusätzlich absolut in Bilanzwährung
+    (`fin`, Felder fin_*): Wachstumsraten sollen nicht von Wechselkursen abhängen."""
     shares = src.get("shares")
     ocf, capex = src.get("ocf"), src.get("capex")
     fcf = src.get("fcf")
@@ -64,6 +66,9 @@ def _per_share_row(src: dict, end: str, flow_ccy: str | None, eps_ccy: str | Non
 
     def ps(amount):
         return conv.convert(amount / shares, flow_ccy, end) if amount is not None and shares else None
+
+    def total(amount):
+        return fin.convert(amount, flow_ccy, end)
 
     return {
         "end": pd.Timestamp(end),
@@ -75,6 +80,12 @@ def _per_share_row(src: dict, end: str, flow_ccy: str | None, eps_ccy: str | Non
         "rev_ps": ps(src.get("revenue")),
         "revenue": conv.convert(src.get("revenue"), flow_ccy, end),
         "shares": shares,
+        "fin_revenue": total(src.get("revenue")),
+        "fin_gross": total(src.get("gross_profit")),
+        "fin_operating": total(src.get("operating_income")),
+        "fin_net": total(src.get("net_income")),
+        "fin_fcf": total(fcf),
+        "fin_rnd": total(src.get("rnd")),
     }
 
 
@@ -82,9 +93,10 @@ def merge_annual(yahoo_annual: dict, fin_ccy: str | None, filings: list[tuple[st
                  conv: fx.Converter) -> list[dict]:
     """Jahreswerte aus Pflichtberichten (`filings`: [("SEC", rows), ("ESEF", rows)], in dieser Rangfolge) und Yahoo.
     Eine spätere Quelle füllt nur Lücken desselben Geschäftsjahres oder ergänzt fehlende Jahre."""
-    sources = [(name, [_per_share_row(r, r["end"], r.get("currency"), r.get("eps_currency"), conv, name) for r in rows])
+    fin = fx.Converter(fin_ccy)
+    sources = [(name, [_per_share_row(r, r["end"], r.get("currency"), r.get("eps_currency"), conv, name, fin) for r in rows])
                for name, rows in filings]
-    sources.append(("Yahoo", [_per_share_row(f, end, fin_ccy, fin_ccy, conv, "Yahoo") for end, f in yahoo_annual.items()]))
+    sources.append(("Yahoo", [_per_share_row(f, end, fin_ccy, fin_ccy, conv, "Yahoo", fin) for end, f in yahoo_annual.items()]))
     rows: list[dict] = []
     for name, new_rows in sources:
         for y in new_rows:
@@ -152,6 +164,10 @@ def _quality(annual: list[dict], estimates: dict, today: pd.Timestamp) -> dict:
     key, pts, label = ("eps_adj", adj, "bereinigten Gewinn") if adj and len(adj) >= len(eps) else ("eps", eps, "bilanzierten Gewinn")
     stats = metrics.trend_stats(pts)
     other = metrics.trend_stats(eps if key == "eps_adj" else adj)
+    # überwiegend Verluste: keine Gewinnstabilität (zählt in Scorecard und Filtern wie ein fehlender Wert)
+    loss_making = metrics.mostly_losses(stats)
+    if loss_making:
+        stats["stability"] = None
     e0 = estimates.get("0y") or {}
     forecast_growth = None
     if e0.get("avg") and e0.get("year_ago") and e0["year_ago"] > 0:
@@ -159,7 +175,8 @@ def _quality(annual: list[dict], estimates: dict, today: pd.Timestamp) -> dict:
     return {
         "basis": key, "basis_label": label, **stats,
         "short": stats["stability"] is not None and metrics.is_short(stats["years"]),
-        "other_stability": other["stability"],
+        "loss_making": loss_making,
+        "other_stability": None if metrics.mostly_losses(other) else other["stability"],
         "forecast_growth": forecast_growth,
         "points": [[d, v] for d, v in pts],
         "forecasts": valuation.forecast_points(pts[-1] if pts else None, estimates, today),
@@ -343,6 +360,7 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
         "annual": [{k: v for k, v in r.items() if k != "shares"} for r in annual],
         "ttm": {k: v for k, v in ttm.items() if k != "fcf_total"},
         "quality": quality,
+        "business": business.build(annual, raw, info, ttm["fcf_total"], fin_ccy, fx.Converter(fin_ccy).rate, is_financial),
         "fundamentals": {
             "roic": fundamentals.roic(statements, is_financial),
             "piotroski": fundamentals.piotroski(statements),

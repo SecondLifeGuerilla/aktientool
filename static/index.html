@@ -7,10 +7,12 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/css/app.css">
   <script>
-    // Theme vor dem ersten Rendern setzen, damit nichts aufblitzt
+    // Theme und Ansicht (Basis/Profi) vor dem ersten Rendern setzen, damit nichts aufblitzt
     try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+    try { document.documentElement.dataset.mode = localStorage.getItem("viewMode") === "basic" ? "basic" : "advanced"; } catch (e) {}
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <!-- ECharts 5.5.1 liegt lokal bei, damit Diagramme ohne CDN laden -->
+  <script src="/static/vendor/echarts.min.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -20,31 +22,42 @@
         <span>Aktientool</span>
       </a>
       <div class="search" id="search">
-        <input id="search-input" type="search" placeholder="Aktie suchen: Name, Ticker …" autocomplete="off" aria-label="Aktie suchen">
+        <input id="search-input" type="search" placeholder="Aktie suchen: Name, Ticker, ISIN" autocomplete="off" aria-label="Aktie suchen (Taste /)">
+        <kbd class="search-kbd" title="Taste / springt von überall in die Suche">/</kbd>
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
       </div>
       <nav class="mainnav">
         <a href="#/welt" data-nav="welt">Weltauswahl</a>
-        <a href="#/screener" data-nav="screener">Screener</a>
+        <a href="#/screener" data-nav="screener" class="adv">Screener</a>
+        <a href="#/trusts" data-nav="trusts" title="Investment Trusts, Closed-End-Fonds und Holdings mit Abschlag zum inneren Wert">Trusts & Holdings</a>
         <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
         <a href="#/depot" data-nav="depot">Depot</a>
         <a href="#/alarme" data-nav="alarme">Alarme <span class="nav-badge" id="alert-badge" hidden></span></a>
         <details class="navmore" id="navmore">
           <summary>Mehr</summary>
           <div class="navmore-panel">
-            <a href="#/termine" data-nav="termine">Termine</a>
-            <a href="#/vergleich" data-nav="vergleich">Vergleich</a>
-            <a href="#/score-check" data-nav="score-check">Score-Check</a>
+            <a href="#/tutorial" data-nav="tutorial">Tutorial</a>
+            <a href="#/termine" data-nav="termine" class="adv">Termine</a>
+            <a href="#/vergleich" data-nav="vergleich" class="adv">Vergleich</a>
+            <a href="#/score-check" data-nav="score-check" class="adv">Score-Check</a>
+            <a href="#/hebel" data-nav="hebel">Optionsscheine &amp; Knock-outs</a>
+            <a href="#/callput" data-nav="callput">Call/Put-Rechner</a>
             <a href="#/lexikon" data-nav="lexikon">Lexikon</a>
+            <button type="button" id="keys-btn" class="navmore-btn">Tastenkürzel <kbd>?</kbd></button>
           </div>
         </details>
+        <div class="segmented mode-switch" id="mode-switch" role="group" aria-label="Ansicht">
+          <button type="button" data-view-mode="basic" title="Nur die wichtigsten Kennzahlen und Funktionen">Basis</button>
+          <button type="button" data-view-mode="advanced" title="Alle Kennzahlen und Funktionen">Profi</button>
+        </div>
+        <button id="tour-btn" class="icon-btn tour-btn" type="button" aria-label="Kurz-Tour für diese Seite starten" hidden>? Tour</button>
         <button id="theme-toggle" class="icon-btn" type="button" title="Darstellung wechseln" aria-label="Darstellung wechseln"></button>
       </nav>
     </div>
   </header>
   <main id="app" class="container"></main>
   <footer class="footer container">
-    Daten: Yahoo Finance (über yfinance) und SEC EDGAR. Keine Anlageberatung; alle Angaben ohne Gewähr.
+    Daten: Yahoo Finance (über yfinance) und SEC EDGAR; Trusts: Morningstar und AIC; Hebelprodukte: onvista. Keine Anlageberatung; alle Angaben ohne Gewähr.
   </footer>
   <script type="module" src="/static/js/app.js"></script>
 </body>

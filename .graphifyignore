@@ -1,0 +1,5 @@
+# Ergänzt .gitignore (.venv/, data/, __pycache__/ sind dort schon raus)
+# Fremdbibliothek, minifiziert – kein eigener Code
+static/vendor/
+.claude/
+.idea/

@@ -35,6 +35,13 @@ function render(entry) {
   entry.chart.setOption(entry.build(theme()), { notMerge: true });
 }
 
+// Charts in einem Bereich entfernen, der gleich aus der Seite verschwindet (z. B. zugeklappte Tabellenzeile)
+export function unmountWithin(root) {
+  for (const e of [...registry]) {
+    if (root.contains(e.el)) { e.ro.disconnect(); e.chart.dispose(); registry.delete(e); }
+  }
+}
+
 export function rerenderAll() {
   for (const e of registry) render(e);
 }

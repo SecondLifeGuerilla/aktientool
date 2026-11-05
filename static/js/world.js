@@ -1,12 +1,32 @@
 // Weltauswahl: die größten Aktien der Welt nach Kontinent, Land, Sektor und Branche filtern und nach Kennzahlen sortieren
 import { api, getWatchlist, toggleWatch } from "./api.js";
+import { takeRowToShow, trackBrowse } from "./browse.js";
+import { NOT_TR_TAG, setTrOnly, trOnly } from "./broker.js";
+import { csvNum, downloadCsv, today } from "./csv.js";
 import * as F from "./format.js";
 import { term } from "./glossary.js";
+import { setPageKeys } from "./keys.js";
+import { isBasic, tourRunning } from "./mode.js";
+import { cancelRestore } from "./nav.js";
+import { removeFilter, restoreFilter, saveFilter, savedFilters } from "./savedfilters.js";
+import { toast } from "./toast.js";
+import { flipWatch } from "./watch.js";
 
 const esc = F.escapeHtml;
 const PAGE = 100;
 const ANALYZE_MAX = 50;
 const CUSTOM = "Eigene Liste";
+const PANEL_KEY = "weltFilterZu";
+
+// Filterbereich eingeklappt? Die Wahl bleibt im Browser; während einer Tutorial-Tour ist er immer offen, weil die Tour darauf zeigt
+function readCollapsed() {
+  try { return localStorage.getItem(PANEL_KEY) === "1"; } catch (e) { return false; }
+}
+function saveCollapsed(on) {
+  try { localStorage.setItem(PANEL_KEY, on ? "1" : "0"); } catch (e) { /* nur Komfort */ }
+}
+let paintPanel = null; // Filterbereich der gerade angezeigten Weltauswahl neu einstellen (Tour beginnt oder endet)
+document.addEventListener("mode-changed", () => paintPanel?.());
 
 const pct = (d) => (v) => F.pct(v, d);
 const signed = (d) => (v) => F.signedPct(v, d);
@@ -100,7 +120,21 @@ const VIEWS = [
   ["price", "Kurs & Analysten", ["perf_1y", "momentum", "from_high", "rating", "forward_pe"]],
 ];
 
-const PRESETS = [
+// Basis-Ansicht: nur die wichtigsten Kennzahlen, Ansichten und Vorlagen. Filter, Sortierung oder Auswahl aus der
+// Profi-Ansicht bleiben sichtbar, damit nichts unbemerkt filtert.
+const BASIC_METRICS = new Set(["score_total", "market_cap", "pe", "div_yield", "payout", "d_stab", "d_growth", "d_dev", "d_exp",
+  "d_net_yield", "d_streak", "d_div_growth"]);
+const BASIC_VIEWS = [
+  ["overview", "Überblick", ["score_total", "pe", "div_yield", "d_stab", "d_growth", "d_dev", "d_exp"]],
+  ["dividend", "Dividende", ["div_yield", "d_net_yield", "d_streak", "d_div_growth", "payout", "d_dev"]],
+];
+const BASIC_PRESETS = new Set(["Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten", "Attraktivste (Gesamt-Score)"]);
+const views = () => (isBasic() ? BASIC_VIEWS : VIEWS);
+// gewählte Ansicht; gibt es sie in der Basis-Ansicht nicht (z. B. „Qualität & fairer Wert“ aus einer Vorlage), der Überblick
+const viewOf = (key) => views().find(([k]) => k === key) || views()[0];
+
+// auch vom Tutorial genutzt (Links auf eine Vorlage)
+export const PRESETS = [
   ["Stabil & unterbewertet", { rules: [["d_stab", "min", "0,9"], ["d_dev", "max", "-10"]], sort: "d_dev", view: "deep" }],
   ["Hohe erwartete Rendite", { rules: [["d_exp", "min", "12"], ["d_stab", "min", "0,7"]], sort: "d_exp", view: "deep" }],
   ["Dividenden-Aristokraten", { rules: [["d_streak", "min", "25"]], sort: "d_streak", view: "dividend" }],
@@ -115,6 +149,14 @@ const PRESETS = [
   ["Günstig bewertet", { rules: [["pe", "max", "15"], ["pb", "max", "2"], ["roe", "min", "10"]], sort: "pe", view: "valuation" }],
   ["Wachstum", { rules: [["revenue_growth", "min", "15"], ["eps_growth", "min", "15"], ["net_margin", "min", "5"]], sort: "revenue_growth", view: "growth" }],
 ];
+
+// Link auf die Weltauswahl mit einer Vorlage (Startseite, leere Listen)
+export function presetHref(name) {
+  const p = PRESETS.find(([n]) => n === name)?.[1];
+  if (!p) return "#/welt";
+  const q = new URLSearchParams({ f: p.rules.map((r) => r.join(":")).join("|"), ansicht: p.view, sort: p.sort });
+  return `#/welt?${q}`;
+}
 
 const CAP_STEPS = [5, 10, 25, 50, 100, 250, 1000];
 
@@ -142,14 +184,16 @@ function readState(params) {
     }).filter(Boolean),
     view: VIEWS.some(([k]) => k === view) ? view : "overview",
     sort: sort in METRICS || sort in TEXT_SORT ? sort : "market_cap",
-    limit: PAGE,
+    // „Weitere anzeigen“ steht in der Adresse, damit Zurück aus einem Profil an dieselbe Stelle der langen Liste führt
+    limit: Math.min(6000, Math.max(PAGE, Math.ceil((parseNum(params.get("n")) || PAGE) / PAGE) * PAGE)),
   };
   const dir = params.get("dir");
   s.dir = dir === "asc" ? 1 : dir === "desc" ? -1 : defaultDir(s.sort);
   return s;
 }
 
-function writeState(S) {
+// Adresse der Weltauswahl ohne Seitenzahl (auch für „Meine Filter“)
+function stateQuery(S) {
   const p = new URLSearchParams();
   if (S.q) p.set("q", S.q);
   for (const [k, set] of [["kontinent", S.continents], ["land", S.countries], ["sektor", S.sectors], ["branche", S.industries], ["thema", S.themes]]) {
@@ -160,9 +204,15 @@ function writeState(S) {
   if (S.view !== "overview") p.set("ansicht", S.view);
   if (S.sort !== "market_cap") p.set("sort", S.sort);
   if (S.dir !== defaultDir(S.sort)) p.set("dir", S.dir > 0 ? "asc" : "desc");
+  return p;
+}
+
+function writeState(S) {
+  const p = stateQuery(S);
+  if (S.limit > PAGE) p.set("n", String(S.limit));
   const qs = p.toString();
   // replaceState löst kein hashchange aus: die Seite wird nicht neu aufgebaut
-  history.replaceState(null, "", `#/welt${qs ? `?${qs}` : ""}`);
+  history.replaceState(history.state, "", `#/welt${qs ? `?${qs}` : ""}`);
 }
 
 // ---- Mehrfachauswahl (Kontinent, Land, Sektor, Branche) als aufklappbare Liste mit Trefferzahlen
@@ -284,51 +334,70 @@ export async function renderWorld(root, params, isCurrent) {
   bindOutsideClick();
 
   const S = readState(params);
+  S.tr = trOnly(); // keine URL-Angabe: gilt dauerhaft, bis man den Schalter umlegt
+  const basic = isBasic();
   let data;
   let rows = [];
+  let trReady = false; // Handelsliste der LS Exchange geladen und auf die Daten angewendet
+  let trCount = 0;
   let industrySector = new Map();
   let facets = {};
   const $ = (sel) => root.querySelector(sel);
 
   root.innerHTML = `
-    <h1>Weltauswahl</h1>
-    <p class="secondary" style="max-width:860px;margin-top:6px">Die größten Aktien aller wichtigen Börsen der Welt, jede Firma einmal mit ihrer Heimatbörse.
-      Filtern Sie nach Kontinent, Land, Sektor, Branche und Anlagethema, grenzen Sie mit Kennzahlen und Scores ein und sortieren Sie per Klick auf eine Spalte.
-      Fachbegriffe mit gepunkteter Linie erklären sich beim Darüberfahren. Der Name führt zur ausführlichen Analyse.</p>
-    <p class="muted" id="w-status" style="font-size:13px;margin-top:4px"></p>
-    <div class="deep-bar" id="w-deep"></div>
-    <div class="card" style="margin-top:12px">
-      <div class="filters">
-        <div class="field"><label for="w-q">Suche</label><input id="w-q" class="wide" type="search" placeholder="Name, Ticker oder ISIN" autocomplete="off"></div>
-        <div class="field" id="w-cont"></div>
-        <div class="field" id="w-country"></div>
-        <div class="field" id="w-sector"></div>
-        <div class="field" id="w-industry"></div>
-        <div class="field" id="w-theme"></div>
-        <div class="field"><label for="w-cap">${term("boersenwert", "Börsenwert")}</label><select id="w-cap"></select></div>
+    <div class="page-head">
+      <h1>Weltauswahl</h1>
+      <p class="muted" id="w-status"></p>
+    </div>
+    <div class="page-sub">
+      <p class="secondary">Die größten Aktien aller wichtigen Börsen, jede Firma einmal mit ihrer Heimatbörse. Ein Klick auf den Namen öffnet die Analyse.</p>
+      <div class="deep-bar" id="w-deep"></div>
+    </div>
+    <div class="card filter-card" id="w-filter-card">
+      <div class="filter-head">
+        <span class="filter-title">Filter</span>
+        <span class="filter-chips" id="w-chips"></span>
+        <span class="spacer"></span>
+        <span class="tr-only"><label class="check" id="w-tr-label"><input type="checkbox" id="w-tr"> nur bei Trade Republic handelbar</label>
+          ${term("trade_republic", '<span aria-hidden="true">ⓘ</span><span class="visually-hidden">Erklärung</span>')}</span>
+        <button class="linklike" id="w-save-open" type="button" title="Die aktuellen Filter unter einem Namen merken">Filter speichern</button>
+        <button class="linklike" id="w-reset" type="button">Alle zurücksetzen</button>
+        <button class="btn small" id="w-toggle" type="button" aria-controls="w-filter-body"></button>
       </div>
-      <div class="rules-head">
-        <span class="field-label">Kennzahl-Filter</span>
-        <span class="preset-row small">${PRESETS.map(([name], i) => `<button type="button" class="btn small" data-preset="${i}">${esc(name)}</button>`).join("")}</span>
-      </div>
-      <div id="w-rules" class="rules"></div>
-      <div class="toolbar" style="margin:10px 0 0">
-        <button class="btn" id="w-add" type="button">+ Kennzahl-Filter</button>
-        <button class="btn" id="w-reset" type="button">Alle Filter zurücksetzen</button>
+      <div id="w-filter-body">
+        <div class="filters">
+          <div class="field"><label for="w-q">Suche</label><input id="w-q" type="search" placeholder="Name, Ticker, ISIN" autocomplete="off"></div>
+          <div class="field" id="w-cont"></div>
+          <div class="field" id="w-country"></div>
+          <div class="field" id="w-sector"></div>
+          <div class="field" id="w-industry"></div>
+          <div class="field" id="w-theme"></div>
+          <div class="field"><label for="w-cap">${term("boersenwert", "Börsenwert")}</label><select id="w-cap"></select></div>
+        </div>
+        <div class="rules-head">
+          <span class="field-label">Vorlagen</span>
+          <span class="preset-row small">${PRESETS.map(([name], i) => (basic && !BASIC_PRESETS.has(name) ? ""
+            : `<button type="button" class="btn small" data-preset="${i}">${esc(name)}</button>`)).join("")}
+            <button class="btn small add-rule" id="w-add" type="button">+ Kennzahl-Filter</button></span>
+        </div>
+        <div id="w-rules" class="rules"></div>
+        <div class="rules-head" id="w-saved-head">
+          <span class="field-label">Meine Filter</span>
+          <span class="saved-row" id="w-saved"></span>
+        </div>
       </div>
     </div>
-    <div class="toolbar" style="margin-top:16px">
+    <div class="toolbar results-bar">
       <div class="segmented scroll" role="group" aria-label="Kennzahlen-Ansicht">
-        ${VIEWS.map(([k, l]) => `<button type="button" data-view="${k}">${l}</button>`).join("")}
+        ${views().map(([k, l]) => `<button type="button" data-view="${k}">${l}</button>`).join("")}
       </div>
-    </div>
-    <div class="toolbar">
-      <span id="w-count" class="secondary"></span>
       <span class="spacer"></span>
+      <span id="w-count" class="secondary"></span>
       <label class="check" for="w-sort">Sortieren nach</label>
       <select id="w-sort" class="plain"></select>
       <button class="icon-btn" id="w-dir" type="button"></button>
-      <button class="btn primary" id="w-analyze" type="button"></button>
+      <button class="btn small" id="w-csv" type="button" title="Alle Treffer mit allen Kennzahlen als CSV-Datei (für Excel, Numbers, Google Sheets)">CSV</button>
+      <button class="btn primary adv" id="w-analyze" type="button"></button>
     </div>
     <div class="card table-scroll" style="padding:8px 8px 4px">
       <table class="data screener world">
@@ -336,7 +405,8 @@ export async function renderWorld(root, params, isCurrent) {
         <tbody id="w-rows"></tbody>
       </table>
       <div class="more" id="w-more-wrap"><button class="btn" id="w-more" type="button">Weitere ${PAGE} anzeigen</button></div>
-    </div>`;
+    </div>
+    <div class="select-bar" id="w-select" hidden></div>`;
 
   // ---- Daten vorbereiten (auch nach einer Aktualisierung im Hintergrund)
   function setData(d) {
@@ -351,6 +421,16 @@ export async function renderWorld(root, params, isCurrent) {
     }
     industrySector = new Map();
     for (const r of rows) if (r.industry && !industrySector.has(r.industry)) industrySector.set(r.industry, r.sector);
+    const trInfo = d.trade_republic || {};
+    trReady = Boolean(trInfo.ready) && rows.some((r) => "tr" in r);
+    trCount = rows.filter((r) => r.tr).length;
+    const box = $("#w-tr");
+    box.checked = S.tr;
+    box.disabled = !trReady;
+    $("#w-tr-label").title = trReady
+      ? `Laut Handelsliste der LS Exchange vom ${new Date(trInfo.date).toLocaleDateString("de-DE")}: ${F.int(trCount)} von ${F.int(rows.length)} Aktien der Weltauswahl sind bei Trade Republic handelbar.`
+      : trInfo.error ? `Handelsliste der LS Exchange nicht geladen (${trInfo.error}); es werden alle Aktien gezeigt.`
+        : "Die Handelsliste der LS Exchange wird noch geladen; bis dahin werden alle Aktien gezeigt.";
     const byName = (a, b) => a.text.localeCompare(b.text, "de");
     const onFacet = () => { normalizeFacets(); changed(); };
     facets = {
@@ -397,7 +477,9 @@ export async function renderWorld(root, params, isCurrent) {
     const q = S.q.trim().toLowerCase();
     const rules = compiledRules();
     const minCap = S.minCap ? S.minCap * 1e9 : null;
+    const trFilter = S.tr && trReady;
     return (r) => {
+      if (trFilter && !r.tr) return false;
       if (q && !r._search.includes(q)) return false;
       if (skip !== "cont" && S.continents.size && !S.continents.has(r._cont)) return false;
       if (skip !== "country" && S.countries.size && !S.countries.has(r.country)) return false;
@@ -442,13 +524,19 @@ export async function renderWorld(root, params, isCurrent) {
 
   // ---- Darstellung
   function columns() {
-    const metrics = [...VIEWS.find(([k]) => k === S.view)[2]];
+    const metrics = [...viewOf(S.view)[2]];
     if (S.sort in METRICS && !metrics.includes(S.sort)) metrics.push(S.sort);
-    return ["name", "country", "industry", ...metrics, "watch"];
+    return ["pick", "name", "country", ...(basic ? [] : ["industry"]), ...metrics, "watch"];
   }
 
   function headCell(key) {
     if (key === "watch") return '<th scope="col"><span class="visually-hidden">Watchlist</span></th>';
+    if (key === "pick") {
+      const shown = lastList.slice(0, S.limit);
+      const all = shown.length > 0 && shown.every((r) => picked.has(r.symbol));
+      return `<th scope="col" class="pick"><input type="checkbox" id="w-pick-all" ${all ? "checked" : ""}
+        title="Alle angezeigten Zeilen auswählen" aria-label="Alle angezeigten Zeilen auswählen"></th>`;
+    }
     const m = METRICS[key];
     const label = esc(m ? m.label : TEXT_SORT[key] === "Name" ? "Aktie" : TEXT_SORT[key]);
     const termKey = m ? m.term : TEXT_TERMS[key];
@@ -458,9 +546,13 @@ export async function renderWorld(root, params, isCurrent) {
 
   function cell(key, r) {
     switch (key) {
+      case "pick":
+        return `<td class="pick"><input type="checkbox" data-pick="${esc(r.symbol)}" ${picked.has(r.symbol) ? "checked" : ""} aria-label="${esc(r.name)} auswählen"></td>`;
       case "name":
+        // „nicht bei TR“ nur, wenn auch nicht handelbare Aktien gezeigt werden
+        const notTr = r.tr === 0 && !(S.tr && trReady);
         return `<td class="name"><a href="#/aktie/${encodeURIComponent(r.symbol)}">${esc(r.name)}</a><span class="sym">${esc(r.symbol)}</span>${
-          r._themes.length ? `<div class="tags">${r._themes.map((t) => `<span class="tag" title="${esc(t)}">${esc(data.themes?.[t]?.short || t)}</span>`).join("")}</div>` : ""}</td>`;
+          r._themes.length || notTr ? `<div class="tags">${notTr ? NOT_TR_TAG : ""}${r._themes.map((t) => `<span class="tag" title="${esc(t)}">${esc(data.themes?.[t]?.short || t)}</span>`).join("")}</div>` : ""}</td>`;
       case "country": return `<td class="txt" title="${esc(r._cont)}">${esc(r._country)}</td>`;
       case "industry": return `<td class="txt ind" title="${esc(r.sector || "")}">${esc(r.industry || "–")}</td>`;
       case "watch": {
@@ -482,6 +574,7 @@ export async function renderWorld(root, params, isCurrent) {
   function metricOptions(selectedKey) {
     const groups = new Map();
     for (const [k, m] of Object.entries(METRICS)) {
+      if (basic && !BASIC_METRICS.has(k) && k !== selectedKey) continue;
       if (!groups.has(m.group)) groups.set(m.group, []);
       groups.get(m.group).push(`<option value="${k}" ${k === selectedKey ? "selected" : ""}>${esc(m.long || m.label)}</option>`);
     }
@@ -509,7 +602,10 @@ export async function renderWorld(root, params, isCurrent) {
     $("#w-q").value = S.q;
     $("#w-cap").innerHTML = `<option value="">alle (ab ${F.big(data.min_cap_eur, "€")})</option>` +
       CAP_STEPS.map((v) => `<option value="${v}" ${S.minCap === v ? "selected" : ""}>ab ${F.int(v)} Mrd. €</option>`).join("");
-    root.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === S.view)));
+    root.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === viewOf(S.view)[0])));
+    // Basis-Ansicht: Branche und Thema nur, wenn dort schon etwas ausgewählt ist
+    $("#w-industry").hidden = basic && !S.industries.size;
+    $("#w-theme").hidden = basic && !S.themes.size;
     $("#w-sort").innerHTML = Object.entries(TEXT_SORT).map(([k, l]) => `<option value="${k}" ${k === S.sort ? "selected" : ""}>${l}</option>`).join("") + metricOptions(S.sort);
     renderRules();
   }
@@ -528,13 +624,15 @@ export async function renderWorld(root, params, isCurrent) {
     facets.industry.update(countBy("industry", "industry"), allowedIndustries);
     facets.theme.update(countBy("theme", "_themes"), null);
 
+    lastList = list;
     $("#w-head").innerHTML = cols.map(headCell).join("");
     const shown = list.slice(0, S.limit);
-    $("#w-rows").innerHTML = shown.map((r) => `<tr>${cols.map((c) => cell(c, r)).join("")}</tr>`).join("") ||
+    $("#w-rows").innerHTML = shown.map((r) => `<tr data-sym="${esc(r.symbol)}"${picked.has(r.symbol) ? ' class="picked"' : ""}>${cols.map((c) => cell(c, r)).join("")}</tr>`).join("") ||
       `<tr><td colspan="${cols.length}" class="muted" style="text-align:left">Keine Aktie erfüllt alle Filter.</td></tr>`;
     $("#w-more-wrap").hidden = list.length <= S.limit;
     $("#w-more").textContent = `Weitere ${F.int(Math.min(PAGE, list.length - S.limit))} anzeigen`;
-    $("#w-count").textContent = `${F.int(list.length)} von ${F.int(rows.length)} Aktien` +
+    $("#w-count").textContent = (S.tr && trReady ? `${F.int(list.length)} von ${F.int(trCount)} bei Trade Republic handelbaren Aktien`
+      : `${F.int(list.length)} von ${F.int(rows.length)} Aktien`) +
       (list.length > S.limit ? ` · die ersten ${F.int(Math.min(S.limit, list.length))} angezeigt` : "");
     const n = Math.min(ANALYZE_MAX, list.length);
     const which = n === list.length ? (n === 1 ? "Diesen Treffer" : `Alle ${n} Treffer`) : `Erste ${n} Treffer`;
@@ -543,8 +641,140 @@ export async function renderWorld(root, params, isCurrent) {
     $("#w-analyze").dataset.symbols = list.slice(0, n).map((r) => r.symbol).join(",");
     $("#w-dir").textContent = S.dir > 0 ? "↑ aufsteigend" : "↓ absteigend";
     $("#w-dir").setAttribute("aria-label", `Sortierrichtung: ${S.dir > 0 ? "aufsteigend" : "absteigend"}, umschalten`);
+    paintChips();
+    paintSelect();
     writeState(S);
   }
+
+  // ---- Mehrfachauswahl: vergleichen, im Screener analysieren, auf die Watchlist
+  const picked = new Set();
+  let lastList = [];
+  function paintSelect() {
+    const bar = $("#w-select");
+    bar.hidden = picked.size === 0;
+    if (!picked.size) return;
+    const n = picked.size;
+    const canCompare = n >= 2 && n <= 4;
+    bar.innerHTML = `<b>${F.int(n)} ausgewählt</b>
+      <button class="btn small primary" type="button" data-act="compare" ${canCompare ? "" : "disabled"}
+        title="${canCompare ? "Die ausgewählten Aktien nebeneinander vergleichen" : "Zum Vergleichen 2 bis 4 Aktien auswählen"}">Vergleichen</button>
+      <button class="btn small" type="button" data-act="screener" ${n > 100 ? "disabled" : ""} title="Für jede ausgewählte Aktie das ganze Profil laden (höchstens 100)">Im Screener analysieren</button>
+      <button class="btn small" type="button" data-act="watch">Auf die Watchlist</button>
+      <button class="linklike" type="button" data-act="clear">Auswahl aufheben</button>`;
+  }
+
+  // ---- Meine Filter: aktuelle Filter unter einem Namen merken
+  function paintSaved(editing = false) {
+    const list = savedFilters();
+    const current = stateQuery(S).toString();
+    $("#w-saved").innerHTML = list.map((f, i) => `<span class="saved-chip"${f.query === current ? ' title="gerade aktiv"' : ""}>
+        <button type="button" class="btn small" data-saved="${i}">${f.query === current ? "✓ " : ""}${esc(f.name)}</button>
+        <button type="button" class="x" data-saved-rm="${i}" aria-label="Filter „${esc(f.name)}“ löschen" title="löschen">✕</button></span>`).join("") +
+      (editing
+        ? `<form class="save-form" id="w-save-form"><input id="w-save-name" maxlength="60" placeholder="Name, z. B. Europa günstig & stabil" aria-label="Name für die Filter">
+            <button class="btn small primary" type="submit">Speichern</button><button class="linklike" type="button" id="w-save-cancel">Abbrechen</button></form>`
+        : `<button type="button" class="btn small add-rule" id="w-save-new">+ Aktuelle Filter speichern</button>
+           ${list.length ? "" : '<span class="muted" style="font-size:13px">noch keine – stellen Sie Filter ein und speichern Sie sie hier</span>'}`);
+    if (!editing) return;
+    const input = $("#w-save-name");
+    input.value = activeFilters().slice(0, 2).map(([, text]) => text).join(", ").slice(0, 60);
+    input.focus();
+    input.select();
+    $("#w-save-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      const replaced = saveFilter(name, stateQuery(S).toString());
+      toast(replaced ? `Filter „${name}“ aktualisiert.` : `Filter „${name}“ gespeichert. Sie finden ihn hier und auf der Startseite.`, { kind: "good" });
+      paintSaved();
+    });
+    $("#w-save-cancel").addEventListener("click", () => paintSaved());
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); paintSaved(); } });
+  }
+
+  function openSaveForm() {
+    if (collapsed) { collapsed = false; saveCollapsed(false); applyPanel(); }
+    paintSaved(true);
+    $("#w-saved-head").scrollIntoView({ block: "nearest" });
+  }
+
+  // gespeicherten Zustand übernehmen, ohne die Seite neu aufzubauen (die Auswahllisten halten die Mengen in S)
+  function applyQuery(query) {
+    const ns = readState(new URLSearchParams(query));
+    for (const k of ["continents", "countries", "sectors", "industries", "themes"]) {
+      S[k].clear();
+      for (const v of ns[k]) S[k].add(v);
+    }
+    Object.assign(S, { q: ns.q, minCap: ns.minCap, rules: ns.rules, view: ns.view, sort: ns.sort, dir: ns.dir });
+    normalizeFacets();
+    renderControls();
+    changed();
+  }
+
+  // ---- CSV mit allen Treffern und allen Kennzahlen (Rohwerte: Prozent als Zahl, Börsenwert und Umsatz in Mrd. €)
+  function exportCsv() {
+    const keys = Object.keys(METRICS);
+    const header = ["Name", "Ticker", "ISIN", "Land", "Kontinent", "Sektor", "Branche", "bei Trade Republic",
+      ...keys.map((k) => { const m = METRICS[k]; return `${m.long || m.label}${m.pct ? " (%)" : m.scale ? " (Mrd. €)" : ""}`; })];
+    const rows = lastList.map((r) => [r.name, r.symbol, r.isin || "", r._country, r._cont, r.sector || "", r.industry || "",
+      r.tr == null ? "" : r.tr ? "ja" : "nein",
+      ...keys.map((k) => { const m = METRICS[k]; const v = r[k]; return csvNum(typeof v === "number" ? v * (m.pct ? 100 : 1) / (m.scale || 1) : null, 4); })]);
+    downloadCsv(`weltauswahl-${today()}.csv`, header, rows);
+    toast(`${F.int(rows.length)} Aktien als CSV gespeichert (Ordner „Downloads“).`, { kind: "good" });
+  }
+
+  // ---- Aktive Filter als Chips in der Kopfzeile des Filterbereichs; ✕ entfernt den Filter (auch bei eingeklapptem Bereich)
+  function activeFilters() {
+    const out = [];
+    const names = (set, name = (k) => k) => {
+      const all = [...set].map(name);
+      return [all.length <= 2 ? all.join(", ") : `${all.slice(0, 2).join(", ")} +${all.length - 2}`, all.join(", ")];
+    };
+    const facet = (key, label, set, name) => {
+      if (!set.size) return;
+      const [short, full] = names(set, name);
+      out.push([key, `${label}: ${short}`, full]);
+    };
+    if (S.q.trim()) out.push(["q", `Suche: „${S.q.trim()}“`]);
+    facet("cont", "Kontinent", S.continents);
+    facet("country", "Land", S.countries, (k) => data.countries[k]?.name || k);
+    facet("sector", "Sektor", S.sectors);
+    facet("industry", "Branche", S.industries);
+    facet("theme", "Thema", S.themes);
+    if (S.minCap) out.push(["cap", `Börsenwert ab ${F.int(S.minCap)} Mrd. €`]);
+    S.rules.forEach((r, i) => {
+      if (parseNum(r.value) == null) return; // leere Bedingung filtert nicht
+      const m = METRICS[r.key];
+      const unit = m.pct ? " %" : ["Mrd. €", "Jahre"].includes(m.unit) ? ` ${m.unit}` : "";
+      const name = (m.long || m.label).replace(/\s*\(.*\)$/, "");
+      out.push([`rule:${i}`, `${name} ${r.op === "min" ? "≥" : "≤"} ${r.value.trim().replace(/^-/, "−")}${unit}`]);
+    });
+    return out;
+  }
+
+  function paintChips() {
+    const list = activeFilters();
+    $("#w-chips").innerHTML = list.length
+      ? list.map(([k, text, title]) => `<span class="fchip"${title ? ` title="${esc(title)}"` : ""}>${esc(text)}<button type="button"
+          data-clear="${k}" aria-label="Filter „${esc(text)}“ entfernen" title="Filter entfernen">✕</button></span>`).join("")
+      : `<span class="muted">${S.tr && trReady ? "keine weiteren" : "keine, es werden alle Aktien gezeigt"}</span>`;
+    $("#w-reset").hidden = !list.length && !S.rules.length;
+    $("#w-save-open").hidden = !list.length;
+    if (!$("#w-save-form")) paintSaved(); // offenes Namensfeld nicht beim Tippen in anderen Filtern neu aufbauen
+  }
+
+  // ---- Filterbereich ein- und ausklappen
+  let collapsed = readCollapsed();
+  function applyPanel() {
+    const shut = collapsed && !tourRunning();
+    $("#w-filter-body").hidden = shut;
+    $("#w-filter-card").classList.toggle("collapsed", shut);
+    const t = $("#w-toggle");
+    t.textContent = shut ? "Filter bearbeiten ▾" : "Einklappen ▴";
+    t.setAttribute("aria-expanded", String(!shut));
+    t.hidden = tourRunning();
+  }
+  paintPanel = () => { if (isCurrent()) applyPanel(); };
 
   // Nach jeder Filteränderung wieder oben anfangen
   function changed() {
@@ -645,6 +875,20 @@ export async function renderWorld(root, params, isCurrent) {
     } finally { deepPolling = false; }
   }
 
+  // Rückkehr aus dem Profil über „← Weltauswahl“: Zeile der zuletzt angesehenen Aktie zeigen und kurz hervorheben
+  function showReturnRow() {
+    const sym = takeRowToShow();
+    if (!sym) return;
+    const i = lastList.findIndex((r) => r.symbol === sym);
+    if (i < 0) return;
+    if (i >= S.limit) { S.limit = Math.ceil((i + 1) / PAGE) * PAGE; paint(); }
+    const tr = [...$("#w-rows").children].find((x) => x.dataset.sym === sym);
+    if (!tr) return;
+    cancelRestore();
+    tr.scrollIntoView({ block: "center" });
+    tr.classList.add("flash");
+  }
+
   // ---- Ereignisse
   let searchTimer;
   $("#w-q").addEventListener("input", (e) => {
@@ -652,12 +896,31 @@ export async function renderWorld(root, params, isCurrent) {
     searchTimer = setTimeout(() => { S.q = e.target.value; changed(); }, 120);
   });
   $("#w-cap").addEventListener("change", (e) => { S.minCap = parseNum(e.target.value); changed(); });
+  $("#w-tr").addEventListener("change", (e) => { S.tr = e.target.checked; setTrOnly(S.tr); changed(); });
   $("#w-add").addEventListener("click", () => {
     const used = new Set(S.rules.map((r) => r.key));
-    const key = ["pe", "div_yield", "roe", "revenue_growth", "net_margin", "net_debt_ebitda"].find((k) => !used.has(k)) || "pe";
+    const candidates = basic ? ["d_dev", "d_stab", "pe", "div_yield", "d_exp", "d_growth"] : ["pe", "div_yield", "roe", "revenue_growth", "net_margin", "net_debt_ebitda"];
+    const key = candidates.find((k) => !used.has(k)) || candidates[0];
     S.rules.push({ key, op: METRICS[key].dir > 0 ? "max" : "min", value: "" });
     renderRules();
     $(`#w-rules .rule[data-i="${S.rules.length - 1}"] [data-role="value"]`).focus();
+    changed();
+  });
+  $("#w-toggle").addEventListener("click", () => {
+    collapsed = !collapsed;
+    saveCollapsed(collapsed);
+    applyPanel();
+  });
+  $("#w-chips").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-clear]");
+    if (!b) return;
+    const k = b.dataset.clear;
+    if (k === "q") S.q = "";
+    else if (k === "cap") S.minCap = null;
+    else if (k.startsWith("rule:")) S.rules.splice(Number(k.slice(5)), 1);
+    else ({ cont: S.continents, country: S.countries, sector: S.sectors, industry: S.industries, theme: S.themes })[k].clear();
+    normalizeFacets();
+    renderControls();
     changed();
   });
   $("#w-reset").addEventListener("click", () => {
@@ -727,15 +990,84 @@ export async function renderWorld(root, params, isCurrent) {
     const b = e.target.closest("button[data-watch]");
     if (!b) return;
     b.disabled = true;
-    await toggleWatch(b.dataset.watch);
-    watch = await getWatchlist();
+    const sym = b.dataset.watch;
+    const name = rows.find((r) => r.symbol === sym)?.name;
+    try {
+      await flipWatch(sym, name, async () => { watch = await getWatchlist(); if (isCurrent()) paint(); });
+    } catch (err) { toast(err.message, { kind: "bad" }); b.disabled = false; }
+  });
+  $("#w-rows").addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-pick]");
+    if (!cb) return;
+    if (cb.checked) picked.add(cb.dataset.pick); else picked.delete(cb.dataset.pick);
+    cb.closest("tr").classList.toggle("picked", cb.checked);
+    const all = $("#w-pick-all");
+    if (all) all.checked = lastList.slice(0, S.limit).every((r) => picked.has(r.symbol));
+    paintSelect();
+  });
+  $("#w-head").addEventListener("change", (e) => {
+    if (e.target.id !== "w-pick-all") return;
+    for (const r of lastList.slice(0, S.limit)) { if (e.target.checked) picked.add(r.symbol); else picked.delete(r.symbol); }
     paint();
+  });
+  $("#w-select").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const syms = [...picked];
+    if (b.dataset.act === "clear") { picked.clear(); paint(); return; }
+    if (b.dataset.act === "compare") { location.hash = `#/vergleich?s=${encodeURIComponent(syms.join(","))}`; return; }
+    if (b.dataset.act === "screener") { location.hash = `#/screener?list=${encodeURIComponent(CUSTOM)}&symbols=${encodeURIComponent(syms.join(","))}`; return; }
+    if (b.dataset.act === "watch") {
+      const add = syms.filter((s) => !watch.has(s));
+      if (!add.length) { toast("Alle ausgewählten Aktien stehen schon auf der Watchlist."); return; }
+      b.disabled = true;
+      try {
+        for (const s of add) await toggleWatch(s);
+      } catch (err) { toast(err.message, { kind: "bad" }); }
+      watch = await getWatchlist();
+      if (isCurrent()) paint();
+      toast(`${F.int(add.length)} ${add.length === 1 ? "Aktie" : "Aktien"} auf die Watchlist gesetzt.`, {
+        kind: "good", action: "Rückgängig",
+        onAction: async () => {
+          for (const s of add) if ((await getWatchlist()).has(s)) await toggleWatch(s);
+          watch = await getWatchlist();
+          if (isCurrent()) paint();
+        },
+      });
+    }
+  });
+  $("#w-csv").addEventListener("click", exportCsv);
+  $("#w-save-open").addEventListener("click", openSaveForm);
+  $("#w-saved").addEventListener("click", (e) => {
+    if (e.target.id === "w-save-new") { paintSaved(true); return; }
+    const use = e.target.closest("[data-saved]");
+    if (use) { const f = savedFilters()[Number(use.dataset.saved)]; if (f) applyQuery(f.query); return; }
+    const rm = e.target.closest("[data-saved-rm]");
+    if (rm) {
+      const f = savedFilters()[Number(rm.dataset.savedRm)];
+      if (!f) return;
+      const { item, index } = removeFilter(f.name);
+      paintSaved();
+      toast(`Filter „${f.name}“ gelöscht.`, { action: "Rückgängig", onAction: () => { restoreFilter(item, index); if (isCurrent()) paintSaved(); } });
+    }
+  });
+  // Profil aus der Tabelle öffnen: die ganze Trefferliste merken, damit man im Profil weiterblättern kann
+  trackBrowse($("#w-rows"), () => `Weltauswahl (${F.int(lastList.length)} Treffer)`, () => lastList.map((r) => [r.symbol, r.name]));
+  setPageKeys({
+    f: () => $("#w-toggle").click(),
+    s: () => {
+      if (collapsed) { collapsed = false; saveCollapsed(false); applyPanel(); }
+      $("#w-q").focus();
+      $("#w-q").select();
+    },
   });
 
   setData(loaded.data);
   normalizeFacets();
   renderControls();
+  applyPanel();
   paint();
+  showReturnRow();
   paintDeep(loaded.status);
   if (loaded.status.running) pollRefresh();
   if (loaded.status.deep?.running) pollDeep();

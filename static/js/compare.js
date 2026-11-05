@@ -1,5 +1,6 @@
 // Vergleich: bis zu vier Aktien nebeneinander, mit Kennzahlen und gemeinsamer Wertentwicklung
-import { api } from "./api.js";
+import { api, getWatchlist } from "./api.js";
+import { trackBrowse } from "./browse.js";
 import * as C from "./charts.js";
 import * as F from "./format.js";
 import { term } from "./glossary.js";
@@ -19,7 +20,7 @@ const ROWS = [
   ["Börsenwert", "boersenwert", (p) => p.facts.market_cap, (v, p) => F.big(v, p.currency), 0],
   ["Bilanzdaten", null, (p) => p.data.fundamental_years, (v) => (v ? `${v[0]}–${v[1]}` : "–"), 0],
   ["Qualität"],
-  ["Gewinnstabilität", "gewinnstabilitaet", (p) => p.quality.stability, (v, p) => `${F.stability(v)}${p.quality.short ? ' <span class="muted">(kurz)</span>' : ""}`, 1],
+  ["Gewinnstabilität", "gewinnstabilitaet", (p) => p.quality.stability, (v, p) => `${F.stability(v)}${p.quality.short ? ' <span class="muted">(kurz)</span>' : p.quality.loss_making ? ' <span class="muted">(Verluste)</span>' : ""}`, 1],
   ["Gewinnwachstum p. a.", "wachstum_pa", (p) => p.quality.growth, (v) => F.pct(v, 1), 1],
   ["Kapitalrendite (ROIC)", "roic", (p) => p.fundamentals?.roic.latest, (v) => F.pct(v, 1), 1],
   ["Piotroski F-Score", "piotroski", (p) => p.fundamentals?.piotroski.score, (v) => (F.isNum(v) ? `${v} / 9` : "–"), 1],
@@ -73,7 +74,15 @@ export async function renderCompare(root, params, isCurrent) {
     if (b) setSymbols(symbols.filter((s) => s !== b.dataset.rm));
   });
   if (!symbols.length) {
-    $("#c-body").innerHTML = '<div class="card"><p class="muted">Fügen Sie oben Aktien hinzu, z. B. Coca-Cola (KO), PepsiCo (PEP) und Nestlé (NESN.SW).</p></div>';
+    // nächster Schritt mit einem Klick: Beispiel oder die eigene Watchlist
+    const watch = [...await getWatchlist().catch(() => new Set())].slice(0, MAX);
+    if (!isCurrent()) return;
+    const example = ["KO", "PEP", "NESN.SW"];
+    $("#c-body").innerHTML = `<div class="card"><p class="muted">Fügen Sie oben Aktien hinzu oder starten Sie mit einem Vorschlag:</p>
+      <div class="preset-row" style="margin-top:0">
+        <a class="btn" href="#/vergleich?s=${encodeURIComponent(example.join(","))}">Coca-Cola, PepsiCo und Nestlé</a>
+        ${watch.length >= 2 ? `<a class="btn" href="#/vergleich?s=${encodeURIComponent(watch.join(","))}">Die ersten ${watch.length} der Watchlist</a>` : ""}
+      </div></div>`;
     return;
   }
   $("#c-body").innerHTML = '<div class="loading-block"><div class="spinner"></div>Lade Profile …</div>';
@@ -97,6 +106,7 @@ export async function renderCompare(root, params, isCurrent) {
       <div class="chart" id="ch-compare"></div>
     </div>
     <div class="card table-scroll" style="margin-top:12px"><table class="data compare"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  trackBrowse($("#c-body"), "Vergleich", () => profiles.map((p) => [p.symbol, p.name]));
   let range = "5J";
   const years = () => RANGES.find(([l]) => l === range)[1];
   const chart = C.mount($("#ch-compare"), (t) => {

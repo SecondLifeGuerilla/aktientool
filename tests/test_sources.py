@@ -76,3 +76,144 @@ def test_minor_currency_units():
     conv = fx.Converter("GBp")
     assert conv.rate("GBP") == 100.0  # Bilanz in Pfund, Kurs in Pence
     assert fx.Converter("EUR").convert(2.0, "EUR") == 2.0
+
+
+class TestCompanyDescription:
+    """Deutsche Firmenbeschreibung: Wikidata findet den Wikipedia-Artikel über ISIN oder Firmennamen."""
+
+    @staticmethod
+    def fake_get(entities, isin_hits=(), name_hits=()):
+        calls = []
+
+        def get(url, params):
+            calls.append(params)
+            if params.get("list") == "search":
+                return {"query": {"search": [{"title": q} for q in isin_hits]}}
+            if params.get("action") == "wbsearchentities":
+                return {"search": [{"id": q} for q in name_hits]}
+            if params.get("action") == "wbgetentities":
+                return {"entities": {q: entities[q] for q in params["ids"].split("|")}}
+            title = params["titles"]
+            return {"query": {"pages": [{"title": title, "extract": f"{title} ist ein Unternehmen.\nZweiter Absatz."}]}}
+        return get, calls
+
+    def test_isin_finds_article(self, monkeypatch):
+        from aktientool.sources import wiki
+        get, _ = self.fake_get({"Q312": {"claims": {"P946": []}, "sitelinks": {"dewiki": {"title": "Apple"}}}}, isin_hits=["Q312"])
+        monkeypatch.setattr(wiki, "_get", get)
+        d = wiki.company("US0378331005", "Apple Inc.")
+        assert d["title"] == "Apple" and d["text"].startswith("Apple ist") and d["url"].endswith("/wiki/Apple")
+
+    def test_name_fallback_needs_listing_and_strips_legal_form(self, monkeypatch):
+        from aktientool.sources import wiki
+        entities = {"Q1": {"claims": {}, "sitelinks": {"dewiki": {"title": "Unilever (Begriffsklärung)"}}},
+                    "Q2": {"claims": {"P414": []}, "sitelinks": {"dewiki": {"title": "Unilever"}}}}
+        get, calls = self.fake_get(entities, name_hits=["Q1", "Q2"])
+        monkeypatch.setattr(wiki, "_get", get)
+        assert wiki.company("GB00BVZK7T90", "Unilever PLC")["title"] == "Unilever"
+        assert next(c for c in calls if c.get("action") == "wbsearchentities")["search"] == "Unilever"
+
+    def test_nothing_found(self, monkeypatch):
+        from aktientool.sources import wiki
+        get, _ = self.fake_get({"Q9": {"claims": {"P414": []}, "sitelinks": {}}}, isin_hits=["Q9"])
+        monkeypatch.setattr(wiki, "_get", get)
+        assert wiki.company("US0000000001", None) is None
+
+
+# ---------------------------------------------------------------- Handelsliste der LS Exchange
+
+def _lsx_page(rows, header=True) -> bytes:
+    """Seite wie im Stammdaten-PDF: jede Zelle ein Textbefehl an fester x-Position, Zeilen über die y-Position."""
+    xs = {"WKN": 25, "ISIN": 95, "Name": 195, "Gattung": 415}
+    out = []
+    lines = ([dict(zip(xs, xs))] if header else []) + rows
+    for i, row in enumerate(lines):
+        y = 808.69 - 20 * i
+        for col, text in row.items():
+            out.append(f"BT\n1 0 0 1 {xs[col]} {y} Tm\n/F1 10 Tf\n0 0 0 rg\n({text})Tj\n0 g\nET\n")
+    return "".join(out).encode("cp1252")
+
+
+def _lsx_pdf(*pages: bytes) -> bytes:
+    import zlib
+    return b"%PDF-1.5\n" + b"".join(
+        b"1 0 obj <</Filter/FlateDecode>> stream\n" + zlib.compress(p) + b"\nendstream endobj\n" for p in pages)
+
+
+def test_lsx_parse_reads_columns_across_pages():
+    from aktientool.sources import lsx
+    page1 = _lsx_page([
+        {"WKN": "865985", "ISIN": "US0378331005", "Name": "APPLE INC.", "Gattung": "AKTIE"},
+        {"WKN": "A1JC1K", "ISIN": "BMG0129K1045", "Name": r"AEON STORES\(HK\)R.L.", "Gattung": "AKTIE"},
+        {"WKN": "A3K1XY", "ISIN": "DE000A3K1XY0", "Name": "BUND 21/31", "Gattung": "BONDS"},
+    ])
+    page2 = _lsx_page([{"WKN": "909800", "ISIN": "US8740391003", "Name": "TAIWAN SEMICON.MANU.", "Gattung": "AKTIE"},
+                       {"WKN": "", "ISIN": "keine ISIN", "Name": "Fußzeile"}], header=False)  # Folgeseite ohne Kopf
+    got = lsx.parse(_lsx_pdf(page1, page2))
+    assert got == {"US0378331005": ["865985", "APPLE INC.", "AKTIE"],
+                   "BMG0129K1045": ["A1JC1K", "AEON STORES(HK)R.L.", "AKTIE"],
+                   "DE000A3K1XY0": ["A3K1XY", "BUND 21/31", "BONDS"],
+                   "US8740391003": ["909800", "TAIWAN SEMICON.MANU.", "AKTIE"]}
+
+
+def test_lsx_combine_merges_sources_without_bonds():
+    import datetime as dt
+    from aktientool.sources import lsx
+    listed = ("2026-10-23", {"US0378331005": ["865985", "APPLE INC.", "AKTIE"], "DE000A3K1XY0": ["A3K1XY", "BUND", "BONDS"]})
+    quoted = ("2026-10-23", {"US0378331005", "DE000A3K1XY0", "CNE100000296"})  # BYD fehlt im PDF
+    got = lsx.combine(listed, quoted, None, dt.date(2026, 10, 23))
+    assert got["isins"] == {"US0378331005": ["865985", "APPLE INC.", "AKTIE"], "CNE100000296": ["", "", ""]}
+    assert got["date"] == "2026-10-23" and got["stocks"] == 1 and got["count"] == 2
+
+
+def test_lsx_combine_keeps_last_state_of_a_missing_source():
+    import datetime as dt
+    from aktientool.sources import lsx
+    previous = {"listed_date": "2026-10-23", "quoted_date": "2026-10-23",
+                "isins": {"US0378331005": ["865985", "APPLE INC.", "AKTIE"], "CNE100000296": ["", "", ""]}}
+    weekend = lsx.combine(("2026-10-24", {"US0378331005": ["865985", "APPLE INC.", "AKTIE"]}), None,
+                          previous, dt.date(2026, 10, 24))  # am Wochenende gibt es keine Kursliste
+    assert set(weekend["isins"]) == {"US0378331005", "CNE100000296"} and weekend["quoted_date"] == "2026-10-23"
+    stale = lsx.combine(None, ("2026-11-02", {"CNE100000296"}), previous, dt.date(2026, 11, 2))
+    assert set(stale["isins"]) == {"CNE100000296"}  # Stammdaten älter als eine Woche gelten nicht mehr
+    carried = lsx.combine(None, None, previous, dt.date(2026, 11, 2))  # die Kursliste gilt länger (wöchentlich geladen)
+    assert set(carried["isins"]) == {"CNE100000296"}
+    with pytest.raises(RuntimeError):
+        lsx.combine(None, None, previous, dt.date(2026, 11, 10))
+
+
+def test_lsx_quoted_falls_back_to_earlier_window(monkeypatch):
+    import datetime as dt
+    import urllib.error
+    from aktientool.sources import lsx
+    asked = []
+
+    def fake(url):
+        asked.append(url[-6:])
+        if url.endswith("150500"):
+            raise urllib.error.HTTPError(url, 410, "Gone", None, None)
+        return {f"US{n:09d}0" for n in range(lsx.MIN_QUOTED)}
+
+    monkeypatch.setattr(lsx, "_quote_isins", fake)
+    day, isins = lsx._quoted(dt.datetime(2026, 10, 23, 15, 19, tzinfo=dt.timezone.utc))
+    assert asked == ["150500", "120000"] and day == "2026-10-23" and len(isins) == lsx.MIN_QUOTED
+
+    def closed(url):  # vor Handelsbeginn oder am Wochenende
+        raise urllib.error.HTTPError(url, 410, "Gone", None, None)
+
+    monkeypatch.setattr(lsx, "_quote_isins", closed)
+    assert lsx._quoted(dt.datetime(2026, 10, 24, 3, 0, tzinfo=dt.timezone.utc)) is None
+
+
+def test_lsx_unescape_octal_and_umlauts():
+    from aktientool.sources import lsx
+    assert lsx._unescape(rb"M\374NCHENER R\\CK \(NAMENS\)") == "MüNCHENER R\\CK (NAMENS)"
+    assert lsx._unescape("ÖKOWORLD".encode("cp1252")) == "ÖKOWORLD"
+
+
+def test_lsx_find_prefers_first_listed_isin():
+    from aktientool.sources import lsx
+    listing = {"isins": {"US8740391003": ["909800", "TSMC ADR", "AKTIE"], "TW0002330008": ["", "TSMC", "AKTIE"]}}
+    assert lsx.find(listing, ["TW0002330008", "US8740391003"])[0] == "TW0002330008"
+    assert lsx.find(listing, ["KR7402340004"]) is None
+    assert lsx.find(None, ["US8740391003"]) is None

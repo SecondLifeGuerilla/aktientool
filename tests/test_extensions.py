@@ -170,6 +170,13 @@ class TestValuationVariants:
         assert result["available"] and result["metric_key"] == "rev_ps" and result["basis_note"] == "revenue"
         assert result["forecasts"] == []  # Analystenschätzungen gelten nicht für den Umsatz
 
+    def test_loss_series_show_no_stability(self):
+        close = price_series()
+        annual = rows("eps", [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5])
+        result = valuation.build(close, 100.0, annual, {"eps": -0.4}, {})
+        eps = {s["key"]: s for s in result["stabilities"]}["eps"]
+        assert eps["stability"] is None and eps["losses"] and eps["issue"] == "aktuell Verlust"
+
     def test_revenue_is_not_used_when_earnings_work(self):
         close = price_series(fn=lambda t: 80.0)
         annual = rows("eps", [4.0] * 12)
@@ -251,6 +258,12 @@ class TestDeep:
         deep.merge_into(row, {"t": 1, "err": "x"})
         assert row == {"price": 1.0}
 
+    def test_old_entries_with_stability_but_no_growth_are_renewed(self):
+        now = 1_800_000_000
+        assert not deep._is_fresh({"t": now, "stab": 0.46}, now)  # vor Version 2, typisch für Verlustreihen
+        assert deep._is_fresh({"t": now, "stab": 0.9, "growth": 0.08}, now)
+        assert deep._is_fresh({**deep.compact({**self.ROW, "earnings_growth": None}), "t": now}, now)
+
 
 # ---------------------------------------------------------------- Alarme und Nutzerdaten
 
@@ -273,7 +286,7 @@ class TestAlerts:
 class TestUserdata:
     @pytest.fixture(autouse=True)
     def files(self, tmp_path, monkeypatch):
-        for name in ("DEPOT_FILE", "NOTES_FILE", "ALERTS_FILE"):
+        for name in ("DEPOT_FILE", "NOTES_FILE", "ALERTS_FILE", "TRADABLE_FILE", "WATCH_GROUPS_FILE"):
             monkeypatch.setattr(config, name, tmp_path / f"{name}.json")
 
     def test_depot(self):
@@ -281,7 +294,84 @@ class TestUserdata:
         assert items[0]["price"] == 400.5 and items[0]["date"] == "2024-05-02"
         with pytest.raises(userdata.InvalidInput):
             userdata.add_position("MSFT", {"shares": "-1", "price": "1"})
+        # Korrektur: nur die übergebenen Felder ändern sich, Id und Währung bleiben
+        items = userdata.update_position(items[0]["id"], {"shares": 12, "note": "Nachkauf"})
+        assert items[0]["shares"] == 12 and items[0]["price"] == 400.5 and items[0]["note"] == "Nachkauf"
+        assert items[0]["currency"] == "EUR" and items[0]["date"] == "2024-05-02"
+        assert userdata.update_position(items[0]["id"], {"date": ""})[0]["date"] is None
+        with pytest.raises(userdata.InvalidInput):
+            userdata.update_position(items[0]["id"], {"price": "0"})
+        with pytest.raises(userdata.InvalidInput):
+            userdata.update_position("gibtsnicht", {"shares": 1})
         assert userdata.remove_position(items[0]["id"]) == []
+
+    def test_depot_restore_and_import(self):
+        lot = userdata.add_position("MSFT", {"shares": "10", "price": "400", "note": "x"})[0]
+        userdata.remove_position(lot["id"])
+        # Rückgängig: gleiche Id, kein Duplikat beim zweiten Mal
+        items = userdata.restore_position("MSFT", lot)
+        assert [p["id"] for p in items] == [lot["id"]] and items[0]["currency"] == "EUR" and items[0]["note"] == "x"
+        assert len(userdata.restore_position("MSFT", lot)) == 1
+        # alter Kauf ohne Währung bleibt ohne Währung
+        old = {k: v for k, v in lot.items() if k != "currency"} | {"id": "abcdef1234"}
+        assert "currency" not in userdata.restore_position("MSFT", old)[-1]
+        # Import: alles oder nichts, Fehler nennt die Zeile
+        with pytest.raises(userdata.InvalidInput, match="Zeile 2"):
+            userdata.add_positions([("SAP.DE", {"shares": "5", "price": "180,5"}), ("ALV.DE", {"shares": "0", "price": "300"})])
+        assert len(userdata.positions()) == 2
+        items = userdata.add_positions([("SAP.DE", {"shares": "5", "price": "180,5", "date": "2023-01-02"}),
+                                        ("ALV.DE", {"shares": "2", "price": "300"})])
+        assert [p["symbol"] for p in items[-2:]] == ["SAP.DE", "ALV.DE"] and items[-2]["price"] == 180.5
+
+    def test_alert_restore(self):
+        userdata.add_alert("MSFT", {"type": "price_below", "value": "300"})
+        a = userdata.add_alert("SAP.DE", {"type": "below_fair", "value": "-5"})[1]
+        userdata.update_alerts({a["id"]: {"triggered": "2026-10-20", "message": "x", "seen": False}})
+        a = userdata.alerts()[1]
+        userdata.remove_alert(a["id"])
+        items = userdata.restore_alert("SAP.DE", a, 1)
+        assert items[1] == a and len(items) == 2
+        assert len(userdata.restore_alert("SAP.DE", a, 0)) == 2  # kein Duplikat
+        with pytest.raises(userdata.InvalidInput):
+            userdata.restore_alert("SAP.DE", a | {"id": "../x"})
+        with pytest.raises(userdata.InvalidInput):
+            userdata.restore_alert("SAP.DE", a | {"type": "unbekannt"})
+
+    def test_tradable_overrides(self):
+        assert userdata.tradable_overrides() == {}
+        assert userdata.set_tradable("OKE", True) == {"OKE": True}
+        userdata.set_tradable("TSM", False)
+        assert userdata.tradable_overrides() == {"OKE": True, "TSM": False}
+        assert userdata.set_tradable("OKE", None) == {"TSM": False}
+        with pytest.raises(userdata.InvalidInput):
+            userdata.set_tradable("OKE", "ja")
+
+    def test_watch_groups(self):
+        assert userdata.watch_groups() == []
+        groups = userdata.save_watch_groups([
+            {"id": "div", "name": "  Dividende ", "symbols": ["ko", "KO", "PEP"]},
+            {"id": "us", "name": "USA", "parent": "div", "symbols": ["KO"]},
+            {"id": "x", "name": "Getränke", "parent": "us"},
+            {"name": "Ohne Id"},
+        ])
+        assert groups[0] == {"id": "div", "name": "Dividende", "parent": None, "symbols": ["KO", "PEP"]}
+        assert groups[2]["parent"] == "us" and groups[3]["id"]
+        assert userdata.watch_groups() == groups
+        bad = [
+            [{"id": "a", "name": ""}],  # ohne Namen
+            [{"id": "a", "name": "A", "parent": "fehlt"}],  # unbekannte Eltern
+            [{"id": "a", "name": "A", "parent": "b"}, {"id": "b", "name": "B", "parent": "a"}],  # Kreis
+            [{"id": "a", "name": "A"}, {"id": "b", "name": "B", "parent": "a"}, {"id": "c", "name": "C", "parent": "b"},
+             {"id": "d", "name": "D", "parent": "c"}],  # vierte Ebene
+            [{"id": "a", "name": "Tech"}, {"id": "b", "name": "tech"}],  # doppelt auf derselben Ebene
+            [{"id": "a", "name": "A", "symbols": ["kein ticker!"]}],
+        ]
+        for groups in bad:
+            with pytest.raises(userdata.InvalidInput):
+                userdata.save_watch_groups(groups)
+        # gleicher Name unter verschiedenen Eltern ist erlaubt
+        userdata.save_watch_groups([{"id": "a", "name": "A"}, {"id": "b", "name": "B"},
+                                    {"id": "c", "name": "USA", "parent": "a"}, {"id": "d", "name": "USA", "parent": "b"}])
 
     def test_notes(self):
         assert userdata.save_note("SAP.DE", "  These  ")["text"] == "These"
@@ -296,3 +386,162 @@ class TestUserdata:
             userdata.add_alert("KO", {"type": "unbekannt"})
         userdata.update_alerts({items[0]["id"]: {"triggered": "2026-10-21", "seen": False}})
         assert userdata.alerts()[0]["triggered"] == "2026-10-21"
+
+
+# ---------------------------------------------------------------- Gewinnstabilität bei Verlusten, Geschäftsentwicklung
+
+def annual_rows(revenue, net, start=2022, **extra):
+    return [{"end": pd.Timestamp(year=start + i, month=12, day=31), "eps": n / 100, "eps_adj": None, "fin_revenue": r,
+             "fin_net": n, **{k: v[i] for k, v in extra.items()}} for i, (r, n) in enumerate(zip(revenue, net))]
+
+
+class TestLossMakers:
+    def test_quality_has_no_stability_for_shrinking_losses(self):
+        from aktientool import service
+        q = service._quality(annual_rows([1, 1, 1, 1], [-231, -284, -240, -138]), {}, pd.Timestamp("2026-10-23"))
+        assert q["stability"] is None and q["loss_making"] and q["losses"] == 4 and not q["short"]
+
+    def test_quality_keeps_stability_with_one_loss_year(self):
+        from aktientool import service
+        q = service._quality(annual_rows([1] * 6, [100, 120, -50, 160, 180, 200], start=2020), {}, pd.Timestamp("2026-10-23"))
+        assert q["stability"] is not None and not q["loss_making"]
+
+
+class TestBusiness:
+    RAW = {"ttm": {"revenue": 2100.0, "gross_profit": 800.0, "net_income": -600.0},
+           "annual": {"2025-12-31": {"total_assets": 1000.0, "equity": 700.0, "cash": 500.0, "total_debt": 100.0}},
+           "holders": {"insiders": 0.27, "institutions": 0.22},
+           "revenue_estimates": {"0y": {"avg": 3760.0, "low": 3000.0, "high": 4500.0, "analysts": 10, "growth": 0.88, "currency": "CNY"}},
+           "estimates": {"0y": {"avg": -0.68, "analysts": 10, "currency": "CNY"}, "+1y": {"avg": 1.21, "analysts": 2, "currency": "CNY"}}}
+
+    def build(self, info=None):
+        from aktientool.analysis import business
+        annual = annual_rows([1000.0, 1050.0, 1300.0, 2000.0], [-970.0, -1230.0, -1120.0, -700.0],
+                             fin_gross=[390.0, 330.0, 370.0, 750.0], fin_fcf=[-850.0, -1500.0, -1100.0, -1200.0])
+        return business.build(annual, self.RAW, info or {"totalCash": 2600.0, "totalDebt": 1000.0}, -1200.0, "CNY",
+                              lambda ccy: 1.0, False)
+
+    def test_growth_margins_and_losses(self):
+        b = self.build()
+        last = b["years"][-1]
+        assert last["growth"] == pytest.approx(2000 / 1300 - 1) and b["years"][0]["growth"] is None
+        assert last["gross_margin"] == pytest.approx(0.375) and last["net_margin"] == pytest.approx(-0.35)
+        assert last["operating_margin"] is None  # nicht in den Daten
+        assert b["loss_years"] == 4 and b["profit_years"] == 4
+        assert b["revenue_trend"]["growth"] > 0.2
+
+    def test_balance_runway_and_holders(self):
+        b = self.build()
+        bal = b["balance"]
+        assert bal["net_cash"] == 1600.0 and bal["equity_ratio"] == pytest.approx(0.7)
+        assert bal["runway_years"] == pytest.approx(2600 / 1200)
+        assert b["holders"]["insiders"] == 0.27
+
+    def test_estimates_are_labelled_with_fiscal_year(self):
+        est = {e["key"]: e for e in self.build()["estimates"]}
+        assert est["0y"]["year"] == 2026 and est["+1y"]["year"] == 2027  # aus dem letzten Geschäftsjahr abgeleitet
+        assert est["0y"]["revenue"] == 3760.0 and est["+1y"]["revenue"] is None and est["+1y"]["eps"] == 1.21
+        info = {"nextFiscalYearEnd": pd.Timestamp("2027-06-30", tz="UTC").timestamp()}
+        assert {e["key"]: e for e in self.build(info)["estimates"]}["0y"]["year"] == 2027
+
+    def test_financials_have_no_net_cash_or_cashflow_margin(self):
+        from aktientool.analysis import business
+        annual = annual_rows([100.0, 110.0], [10.0, 12.0], fin_fcf=[50.0, 60.0])
+        b = business.build(annual, self.RAW, {"totalCash": 900.0, "totalDebt": 100.0}, 60.0, "EUR", lambda c: 1.0, True)
+        assert b["balance"]["net_cash"] is None and b["years"][-1]["fcf_margin"] is None and b["balance"]["equity_ratio"] == 0.7
+
+    def test_gap_in_fiscal_years_has_no_growth(self):
+        from aktientool.analysis import business
+        annual = annual_rows([100.0, 200.0], [1.0, 2.0])
+        annual[1]["end"] = pd.Timestamp("2025-06-30")  # Umstellung des Geschäftsjahres
+        assert business.build(annual, {}, {}, None, "EUR", lambda c: 1.0, False)["years"][1]["growth"] is None
+
+
+class TestServerHome:
+    """Sammelabfragen für die Startseite."""
+
+    @pytest.fixture
+    def client(self):
+        from aktientool import server
+        return server.app.test_client()
+
+    def test_day_from_timestamp(self):
+        from aktientool import server
+        assert server._day(1793217600) == "2026-10-28"
+        assert server._day(None) is None and server._day(0) is None
+
+    def test_quotes_include_dates(self, client, monkeypatch):
+        from aktientool.sources import yahoo_screener
+        monkeypatch.setattr(yahoo_screener, "quotes", lambda syms: [{
+            "symbol": "MSFT", "regularMarketPrice": 500.0, "currency": "USD", "regularMarketChangePercent": -2.0,
+            "earningsTimestampStart": 1793217600, "isEarningsDateEstimate": True, "dividendDate": 1796860800}])
+        q = client.get("/api/quotes?s=MSFT").get_json()[0]
+        assert q["change"] == -0.02 and q["earnings_date"] == "2026-10-28" and q["earnings_estimate"] is True
+        assert q["dividend_date"] == "2026-12-10"
+
+    def test_underlying_for_option_calculator(self, client, monkeypatch, tmp_path):
+        from aktientool.sources import fx, yahoo, yahoo_screener
+        monkeypatch.setattr(yahoo_screener, "quotes", lambda syms: [{
+            "symbol": "AAPL", "regularMarketPrice": 250.0, "currency": "USD", "longName": "Apple Inc.", "dividendYield": 0.4}])
+        monkeypatch.setattr(yahoo, "closes", lambda sym: [100.0 * 1.01 ** (i % 2) for i in range(300)])
+        monkeypatch.setattr(fx, "eur_quotes", lambda ccys: {"USD": {"rate": 0.9, "change": 0.0}})
+        u = client.get("/api/basiswert/aapl").get_json()
+        assert u["price"] == 250.0 and u["currency"] == "USD" and u["eur"] == 0.9
+        assert u["div_yield"] == pytest.approx(0.004)
+        assert u["vola_1y"] > 0.1 and u["vola_3m"] > 0.1
+
+    def test_underlying_unknown_symbol(self, client, monkeypatch):
+        from aktientool.sources import yahoo_screener
+        monkeypatch.setattr(yahoo_screener, "quotes", lambda syms: [])
+        assert client.get("/api/basiswert/XYZ").status_code == 404
+
+    def test_depot_endpoints(self, client, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "DEPOT_FILE", tmp_path / "depot.json")
+        lot = client.post("/api/depot", json={"symbol": "msft", "shares": "3", "price": "400"}).get_json()[0]
+        assert client.put(f"/api/depot/{lot['id']}", json={"shares": "4"}).get_json()[0]["shares"] == 4
+        assert client.delete(f"/api/depot/{lot['id']}").get_json() == []
+        assert client.post("/api/depot/restore", json=lot).get_json()[0]["id"] == lot["id"]
+        r = client.post("/api/depot/import", json={"items": [{"symbol": "sap.de", "shares": "1", "price": "x"}]})
+        assert r.status_code == 400 and "Zeile 1" in r.get_json()["error"]
+        items = client.post("/api/depot/import", json={"items": [{"symbol": "sap.de", "shares": "1", "price": "180"}]}).get_json()
+        assert [p["symbol"] for p in items] == ["MSFT", "SAP.DE"]
+        assert client.post("/api/depot/import", json={"items": []}).status_code == 400
+
+    def test_world_stocks_skips_unknown(self, client, monkeypatch):
+        from aktientool import world
+        monkeypatch.setattr(world, "stock", lambda s: {"symbol": s, "score_total": 80} if s == "MSFT" else None)
+        assert client.get("/api/world/stocks?s=MSFT,XYZ").get_json() == {"MSFT": {"symbol": "MSFT", "score_total": 80}}
+
+
+class TestTradeRepublic:
+    LISTING = {"date": "2026-10-23", "isins": {"US8740391003": ["909800", "TAIWAN SEMICON.MANU.", "AKTIE"],
+                                                "US0378331005": ["865985", "APPLE INC.", "AKTIE"]}}
+
+    def test_home_listing_and_adr(self):
+        from aktientool import world
+        apple = world.trade_republic_info("AAPL", ["US0378331005"], self.LISTING, {})
+        assert apple["tradable"] and apple["wkn"] == "865985" and not apple["other_listing"]
+        tsmc = world.trade_republic_info("2330.TW", ["TW0002330008", "US8740391003"], self.LISTING, {})
+        assert tsmc["tradable"] and tsmc["isin"] == "US8740391003" and tsmc["other_listing"]
+
+    def test_unknown_without_list_and_override_wins(self):
+        from aktientool import world
+        assert world.trade_republic_info("402340.KS", ["KR7402340004"], None, {})["tradable"] is None
+        assert world.trade_republic_info("402340.KS", ["KR7402340004"], self.LISTING, {})["tradable"] is False
+        own = world.trade_republic_info("402340.KS", ["KR7402340004"], self.LISTING, {"402340.KS": True})
+        assert own["tradable"] and own["override"]
+        assert world.trade_republic_info("AAPL", ["US0378331005"], None, {"AAPL": False})["tradable"] is False
+
+    def test_rows_get_compact_flags(self):
+        from aktientool import world
+        rows = [{"symbol": "2330.TW", "isin": "TW0002330008"}, {"symbol": "AAPL", "isin": "US0378331005"},
+                {"symbol": "402340.KS", "isin": "KR7402340004"}, {"symbol": "X"}]
+        alt = {"2330.TW": ["US8740391003"]}
+        for r in rows:
+            world._mark_tradable(r, alt.get(r["symbol"]), self.LISTING, {})
+        assert rows[0] == {"symbol": "2330.TW", "isin": "TW0002330008", "tr": 1, "tr_isin": "US8740391003"}
+        assert rows[1]["tr"] == 1 and "tr_isin" not in rows[1]
+        assert rows[2]["tr"] == 0 and rows[3]["tr"] == 0
+        unknown = {"symbol": "AAPL", "isin": "US0378331005"}
+        world._mark_tradable(unknown, None, None, {})
+        assert "tr" not in unknown

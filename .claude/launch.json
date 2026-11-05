@@ -10,7 +10,7 @@
     {
       "name": "aktientool-test",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["AKTIENTOOL_PORT=5051", ".venv/bin/python", "run.py"],
+      "runtimeArgs": ["AKTIENTOOL_PORT=5051", "AKTIENTOOL_TIEFE_AUTO=0", "AKTIENTOOL_MITTEILUNG=0", ".venv/bin/python", "run.py"],
       "port": 5051
     }
   ]

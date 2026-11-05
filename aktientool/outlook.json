@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "_note": "Redaktionelle Startauswahl, geprüft am 2026-10-29. Chancen, Risiken, Blickwinkel und Zeitverläufe sind eigene qualitative Ableitungen aus den verlinkten Quellen, keine Unternehmensprognosen. reported bedeutet vom Unternehmen berichtet, nicht unabhängig nachgewiesen. Quellen und Prüfdatum bei jeder inhaltlichen Aktualisierung prüfen. Keine automatische Fortschreibung durch Nachrichten oder Kursabrufe.",
+  "profiles": [
+    {
+      "name": "Microsoft",
+      "symbols": ["MSFT"],
+      "isins": ["US5949181045"],
+      "theme": "KI, Cloud und Büroarbeit",
+      "reviewed_at": "2026-10-29",
+      "summary": "Microsoft kann an zusätzlicher Cloud-Nutzung und KI-Anwendungen verdienen. Entscheidend ist, ob diese Erlöse die Investitionen und laufenden Rechenkosten dauerhaft übersteigen.",
+      "opportunity": {"level": "high", "text": "KI schafft zusätzliche Nachfrage nach Rechenleistung und Software im bestehenden Kundenstamm.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Hohe Infrastrukturkosten und günstigere Alternativen könnten den Ertrag je KI-Nutzung begrenzen.", "source_ids": ["call"]},
+      "short_term": "0–2 Jahre: Neue KI-Nutzung kann Umsatz bringen; Ausbau und Betrieb der Infrastruktur kosten gleichzeitig Geld.",
+      "long_term": "3–5 Jahre: Entscheidend werden Auslastung, Kundenbindung und die Bereitschaft, für KI zusätzlich zu bezahlen.",
+      "uncertainty": "Cloud-Wachstum umfasst auch Geschäft ohne KI. Daraus lässt sich der zusätzliche KI-Gewinn nicht isolieren.",
+      "dimensions": [
+        {"key": "cost", "text": "Interne Automatisierung könnte Arbeit sparen; Rechenkosten laufen mit jeder Nutzung weiter.", "source_ids": ["call"]},
+        {"key": "revenue", "text": "Mehr Cloud-Nutzung und bezahlte KI-Funktionen könnten zusätzliche Erlöse schaffen.", "source_ids": ["results"]},
+        {"key": "business", "text": "Neue Assistenten könnten verändern, welche Software Kunden überhaupt noch benötigen.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Bestehende Cloud- und Softwarebeziehungen könnten die Einführung beim Kunden erleichtern.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Der Ausbau muss sich über genügend bezahlte Nutzung und tragfähige Margen rechnen.", "source_ids": ["call"]}
+      ],
+      "watch": [
+        {"label": "Bezahlte Nutzung", "text": "Wachsen wiederkehrende KI-Erlöse und Nutzung auch nach der Einführung?"},
+        {"label": "Marge", "text": "Bleibt nach Rechenkosten mehr Ergebnis übrig?", "metric": "operating_margin"},
+        {"label": "Investitionen und Cashflow", "text": "Wächst der freie Cashflow trotz des Infrastrukturausbaus?", "metric": "fcf_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Für Q1 FY2027 meldet Microsoft 30 % Cloud-Umsatzwachstum und 48 % Azure-Wachstum gegenüber dem Vorjahr; beide Angaben umfassen auch Geschäft ohne KI.", "source_ids": ["results"]},
+        {"kind": "reported", "text": "Im Q4-FY2026-Ergebnisgespräch nennt Microsoft 41 Mrd. US-Dollar Investitionen einschließlich Finanzierungsleasing und eine durch KI-Infrastruktur mitbelastete Cloud-Bruttomarge.", "source_ids": ["call"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q1 FY2027", "publisher": "Microsoft Investor Relations", "published": "2026-10-28", "url": "https://www.microsoft.com/en-us/investor/earnings/fy-2027-q1/press-release-webcast"},
+        {"id": "call", "title": "Ergebnisgespräch Q4 FY2026", "publisher": "Microsoft Investor Relations", "published": "2026-07-29", "url": "https://www.microsoft.com/en-us/investor/events/fy-2026/earnings-fy-2026-q4"}
+      ]
+    },
+    {
+      "name": "SAP",
+      "symbols": ["SAP.DE", "SAP"],
+      "isins": ["DE0007164600", "US8030542042"],
+      "theme": "KI in Unternehmensprozessen",
+      "reviewed_at": "2026-10-29",
+      "summary": "KI könnte SAP bei Kunden tiefer in Geschäftsprozesse einbinden. Offen bleibt, wie viel zusätzliche Zahlungsbereitschaft entsteht, wenn Arbeitsschritte und Benutzerzugänge wegfallen.",
+      "opportunity": {"level": "high", "text": "KI-Funktionen könnten zusätzliche Nutzung und die Umstellung auf Cloud-Produkte fördern.", "source_ids": ["results"]},
+      "risk": {"level": "medium", "text": "Automatisierung könnte den Bedarf an Benutzerlizenzen verändern und neue Preismodelle erfordern.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: KI könnte Cloud-Verkäufe unterstützen; Integration und Einführung verursachen Aufwand.",
+      "long_term": "3–5 Jahre: Entscheidend wird, ob SAP an automatisierten Prozessen auch bei weniger menschlichen Nutzern verdient.",
+      "uncertainty": "Die vorliegenden Cloud-Zahlen trennen den KI-Beitrag nicht vom übrigen Wachstum.",
+      "dimensions": [
+        {"key": "cost", "text": "Automatisierte Entwicklung und Unterstützung könnten Aufwand senken; KI-Betrieb kostet zusätzlich.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Zusatzfunktionen könnten neue Erlöse schaffen, wenn Kunden dafür bezahlen.", "source_ids": ["results"]},
+        {"key": "business", "text": "Weniger manuelle Arbeit könnte nutzerbasierte Erlösmodelle unter Druck setzen.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Die Einbindung in zentrale Kundenprozesse könnte einen Anbieterwechsel erschweren.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Datenqualität und zuverlässige Integration entscheiden über den praktischen Nutzen.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "KI-Erlöse", "text": "Werden zusätzliche KI-Erlöse und zahlende Kunden separat ausgewiesen?"},
+        {"label": "Preismodell", "text": "Wie werden automatisierte Vorgänge statt Benutzerzugänge abgerechnet?"},
+        {"label": "Marge", "text": "Übersteigt zusätzlicher Erlös den Integrations- und Betriebsaufwand?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "SAP meldet für Q3 2026 währungsbereinigt 25 % Cloud-Umsatzwachstum und 26 % Wachstum des kurzfristigen Cloud-Auftragsbestands. Das belegt keinen isolierten KI-Effekt.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q3 2026", "publisher": "SAP News Center", "published": "2026-10-21", "url": "https://news.sap.com/2026/10/sap-announces-q3-2026-results/"}
+      ]
+    },
+    {
+      "name": "Accenture",
+      "symbols": ["ACN"],
+      "isins": ["IE00B4BNMY34"],
+      "theme": "KI in Beratung und IT-Dienstleistungen",
+      "reviewed_at": "2026-10-29",
+      "summary": "KI kann Projekte beschleunigen und neue Beratungsaufträge schaffen. Gleichzeitig könnten Kunden weniger Arbeitsstunden einkaufen. Entscheidend ist, wer die Produktivitätsgewinne erhält.",
+      "opportunity": {"level": "high", "text": "Unternehmen benötigen Unterstützung bei Daten, Integration und der Einführung von KI.", "source_ids": ["call"]},
+      "risk": {"level": "high", "text": "Schnellere Umsetzung und mehr Eigenleistung der Kunden könnten das Volumen klassischer Dienstleistungen verringern.", "source_ids": ["call"]},
+      "short_term": "0–2 Jahre: Einführungsprojekte schaffen Arbeit; effizientere Umsetzung könnte bereits abrechenbaren Aufwand reduzieren.",
+      "long_term": "3–5 Jahre: Ergebnisabhängige Vergütung und zusätzliche Aufträge müssten sinkenden Arbeitsaufwand ausgleichen.",
+      "uncertainty": "Die Aussage, dass neue Chancen die Effizienzfolgen überwiegen, ist eine Einschätzung des Managements.",
+      "dimensions": [
+        {"key": "cost", "text": "KI könnte die Bearbeitungszeit pro Projekt reduzieren.", "source_ids": ["call"]},
+        {"key": "revenue", "text": "Integration, Datenaufbereitung und Prozessumbau könnten zusätzliche Aufträge schaffen.", "source_ids": ["call"]},
+        {"key": "business", "text": "Bei zeitabhängiger Abrechnung könnte weniger Aufwand auch weniger Erlös bedeuten.", "source_ids": ["call"]},
+        {"key": "moat", "text": "Kundenbeziehungen und Umsetzungserfahrung könnten bei komplexen Projekten helfen.", "source_ids": ["call"]},
+        {"key": "execution", "text": "Weiterbildung und neue Fähigkeiten kosten Geld, bevor daraus Umsatz entsteht.", "source_ids": ["call"]}
+      ],
+      "watch": [
+        {"label": "Neue Aufträge", "text": "Gleichen zusätzliche KI-Projekte kürzere bestehende Projekte aus?"},
+        {"label": "Vergütung", "text": "Wächst der Anteil von Verträgen, die Ergebnisse statt Arbeitszeit bezahlen?"},
+        {"label": "Marge", "text": "Behält Accenture einen Teil der Einsparungen?", "metric": "operating_margin"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Im Gespräch zu Q4 FY2026 beschreibt das Management sowohl effizientere eigene Leistungserbringung als auch schnellere Implementierungen durch KI-Funktionen der Technologiepartner.", "source_ids": ["call"]},
+        {"kind": "reported", "text": "Accenture berichtet für FY2026 über Investitionen von jeweils rund einer Milliarde US-Dollar in Forschung und Entwicklung sowie Weiterbildung.", "source_ids": ["call"]}
+      ],
+      "sources": [
+        {"id": "call", "title": "Ergebnisgespräch Q4 FY2026 (PDF)", "publisher": "Accenture Investor Relations", "published": "2026-10-01", "url": "https://investor.accenture.com/~/media/Files/A/accenture-v4/investors/documents/accenture-4q-fy26-conference-call-transcript.pdf"}
+      ]
+    },
+    {
+      "name": "NVIDIA",
+      "symbols": ["NVDA"],
+      "isins": ["US67066G1040"],
+      "theme": "Rechenleistung für KI",
+      "reviewed_at": "2026-10-29",
+      "summary": "NVIDIA verdient am Aufbau der KI-Infrastruktur. Entscheidend ist, wie dauerhaft die Kundennachfrage bleibt und ob Wettbewerb oder Beschränkungen die hohen Margen beeinträchtigen.",
+      "opportunity": {"level": "high", "text": "Zusätzliche KI-Anwendungen können mehr Nachfrage nach Rechenleistung und Netzwerken auslösen.", "source_ids": ["results"]},
+      "risk": {"level": "high", "text": "Investitionspausen großer Kunden, eigene Chips der Abnehmer und Exportbeschränkungen könnten Wachstum und Preise belasten.", "source_ids": ["results"]},
+      "short_term": "0–2 Jahre: Ausbau der Rechenzentren kann Bestellungen fördern; Lieferfähigkeit und Handelsbeschränkungen bleiben entscheidend.",
+      "long_term": "3–5 Jahre: Kunden müssen mit KI ausreichend verdienen, damit neue Infrastrukturinvestitionen wirtschaftlich bleiben.",
+      "uncertainty": "Heutiges Wachstum und hohe Margen sagen wenig über die Dauer des Investitionszyklus aus.",
+      "dimensions": [
+        {"key": "cost", "text": "Eigene Automatisierung könnte helfen; wesentlich ist hier der Verkauf von KI-Infrastruktur.", "source_ids": ["results"]},
+        {"key": "revenue", "text": "Mehr KI-Nutzung könnte die Nachfrage nach beschleunigter Rechenleistung erhöhen.", "source_ids": ["results"]},
+        {"key": "business", "text": "Effizientere Modelle und alternative Chips könnten die Nachfrage je Anwendung verändern.", "source_ids": ["results"]},
+        {"key": "moat", "text": "Das Zusammenspiel von Hardware und Software könnte einen Wechsel erschweren.", "source_ids": ["results"]},
+        {"key": "execution", "text": "Neue Produkte müssen rechtzeitig und mit ausreichender Marge lieferbar sein.", "source_ids": ["results"]}
+      ],
+      "watch": [
+        {"label": "Kundennachfrage", "text": "Werden Ausbaupläne großer Abnehmer tatsächlich in Bestellungen umgesetzt?"},
+        {"label": "Preise und Wettbewerb", "text": "Wie entwickeln sich Bruttomarge und alternative Chips der Kunden?"},
+        {"label": "Marktzugang", "text": "Welche Märkte und Produkte sind von Exportbeschränkungen betroffen?"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "NVIDIA meldet für Q2 FY2027 einen Gesamtumsatz von 96,2 Mrd. US-Dollar, 106 % mehr als im Vorjahr.", "source_ids": ["results"]},
+        {"kind": "announced", "text": "In der Prognose für Q3 FY2027 setzt NVIDIA keine Umsätze mit Data-Center-Rechenchips in China an. Dies ist eine Planungsannahme.", "source_ids": ["results"]}
+      ],
+      "sources": [
+        {"id": "results", "title": "Ergebnisse Q2 FY2027 und Ausblick", "publisher": "NVIDIA Investor Relations", "published": "2026-08-26", "url": "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-Second-Quarter-Fiscal-2027/"}
+      ]
+    },
+    {
+      "name": "Siemens",
+      "symbols": ["SIE.DE", "SIEGY"],
+      "isins": ["DE0007236101", "US8261975010"],
+      "theme": "Industrielle KI, Robotik und Automatisierung",
+      "reviewed_at": "2026-10-29",
+      "summary": "Siemens könnte sowohl eigene Fabriken effizienter machen als auch Automatisierung an Kunden verkaufen. Der entscheidende Schritt ist die wirtschaftliche Übertragung einzelner Anwendungen auf viele Werke.",
+      "opportunity": {"level": "high", "text": "Industrielle KI könnte zusätzliche Nachfrage nach Automatisierung, Simulation und Software schaffen.", "source_ids": ["factory"]},
+      "risk": {"level": "medium", "text": "Aufwendige Umbauten und langsame Einführung könnten Kundennutzen und neue Erlöse verzögern.", "source_ids": ["factory"]},
+      "short_term": "0–2 Jahre: Einzelne Anwendungen werden erprobt; Integration und Umbau binden Mittel und Personal.",
+      "long_term": "3–5 Jahre: Wiederholbare Lösungen müssten sich über viele Kundenwerke hinweg wirtschaftlich einsetzen lassen.",
+      "uncertainty": "Angaben aus einem Werk sind kein Nachweis für Einsparungen im gesamten Konzern oder bei allen Kunden.",
+      "dimensions": [
+        {"key": "cost", "text": "Automatisierte Prüfung und Produktionsplanung könnten Zeit, Ausschuss und Stillstand reduzieren.", "source_ids": ["factory"]},
+        {"key": "revenue", "text": "Kunden könnten zusätzliche Automatisierung und digitale Fabrikmodelle kaufen.", "source_ids": ["factory"]},
+        {"key": "business", "text": "Mehr Software könnte Wertschöpfung verschieben und neue Wettbewerber anziehen.", "source_ids": ["factory"]},
+        {"key": "moat", "text": "Anlagenkenntnis und Einbindung in laufende Produktion könnten Wettbewerbsvorteile bieten.", "source_ids": ["factory"]},
+        {"key": "execution", "text": "Umrüstung, Sicherheit und zuverlässiger Betrieb entscheiden über die Amortisation.", "source_ids": ["factory"]}
+      ],
+      "watch": [
+        {"label": "Vom Werk zum Kunden", "text": "Entstehen aus den Anwendungen wiederholbare, bezahlte Kundeninstallationen?"},
+        {"label": "Wirtschaftlichkeit", "text": "Werden Einsparungen einschließlich Umbau- und Betriebskosten ausgewiesen?"},
+        {"label": "Aufträge", "text": "Wachsen Automatisierungs- und Softwareaufträge über einzelne Pilotprojekte hinaus?"}
+      ],
+      "evidence": [
+        {"kind": "reported", "text": "Siemens berichtet über gemeinsam mit NVIDIA entwickelte und in der laufenden Produktion des Werks Erlangen getestete KI-Anwendungen.", "source_ids": ["factory"]},
+        {"kind": "announced", "text": "Siemens nennt mögliche Kosteneinsparungen von bis zu 20 % durch agentengestützte Produktionsplanung. Das ist kein nachgewiesener konzernweiter Effekt.", "source_ids": ["factory"]}
+      ],
+      "sources": [
+        {"id": "factory", "title": "KI-Anwendungen im Werk Erlangen", "publisher": "Siemens Presse", "published": "2026-10-19", "url": "https://press.siemens.com/global/en/pressrelease/siemens-partners-nvidia-advance-ai-driven-autonomous-factories"}
+      ]
+    }
+  ]
+}

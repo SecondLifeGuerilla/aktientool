@@ -29,12 +29,15 @@ export async function renderCalendar(root, isCurrent) {
   }
   if (!isCurrent()) return;
   if (!symbols.length) {
-    root.querySelector("#k-body").innerHTML = '<div class="card"><p class="muted">Watchlist und Depot sind leer.</p></div>';
+    root.querySelector("#k-body").innerHTML = `<div class="card"><p class="muted">Watchlist und Depot sind leer. Sobald Sie Aktien merken oder Käufe
+      erfassen, stehen hier deren Quartalszahlen, Ex-Tage und Dividendenzahlungen.</p>
+      <div class="preset-row" style="margin-top:0"><a class="btn" href="#/welt">Kandidaten in der Weltauswahl suchen</a><a class="btn" href="#/depot">Kauf erfassen</a></div></div>`;
     return;
   }
   const rows = [];
   let done = 0;
   await loadSummaries(symbols, (sym, r) => {
+    if (!isCurrent()) return; // Seite inzwischen gewechselt
     done += 1;
     root.querySelector("#k-bar").style.width = `${(done / symbols.length) * 100}%`;
     if (r.status === "ok") rows.push(r.data);

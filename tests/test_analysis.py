@@ -44,6 +44,17 @@ class TestTrendStats:
     def test_constant_positive_series_is_stable(self):
         assert metrics.trend_stats(yearly([2, 2, 2, 2]))["stability"] == 1.0
 
+    def test_shrinking_losses_are_mostly_losses(self):
+        # UBTech 2022–2025: steigende Trendlinie (R² 0,46), aber nur Verluste
+        stats = metrics.trend_stats(yearly([-2.31, -2.84, -2.40, -1.38]))
+        assert stats["stability"] > 0 and stats["losses"] == 4
+        assert metrics.mostly_losses(stats)
+
+    def test_single_loss_year_keeps_stability(self):
+        stats = metrics.trend_stats(yearly([1, 2, -1, 4, 5, 6]))
+        assert stats["losses"] == 1 and not metrics.mostly_losses(stats)
+        assert metrics.mostly_losses(metrics.trend_stats(yearly([-3, -2, -1, 1, 2, 3])))  # Hälfte Verluste
+
 
 def test_cagr():
     assert metrics.cagr(100, 121, 2) == pytest.approx(0.1)
@@ -67,6 +78,14 @@ class TestPriceMetrics:
         close = price_series(fn=lambda t: 100 + t)
         assert metrics.momentum(close) > 0
         assert metrics.all_time_high(close)["distance"] == pytest.approx(0)
+
+    def test_volatility(self):
+        rng = np.random.default_rng(1)
+        prices = 100 * np.exp(np.cumsum(rng.normal(0, 0.3 / math.sqrt(252), 5000)))
+        assert metrics.volatility(prices, 5000) == pytest.approx(0.3, rel=0.03)
+        # nur die letzten Tage zählen: eine ruhige Phase davor ändert die 3-Monats-Volatilität nicht
+        assert metrics.volatility([100.0] * 500 + list(prices[-64:]), 63) == pytest.approx(metrics.volatility(prices, 63))
+        assert metrics.volatility([100.0, 101.0], 250) is None
 
 
 class TestValuation:
@@ -319,6 +338,11 @@ def test_summary_does_not_judge_short_history():
     assert s["earnings"]["reliability"] == "kaum beurteilbar"
     assert s["earnings"]["growth"] is None and s["earnings"]["outlook"] is None
     assert "unsicher" in s["text"] and "günstigen Kaufzeitpunkt" not in s["text"] and "Dank" not in s["text"]
+
+
+def test_summary_names_loss_making_earnings():
+    s = summary.build({"stability": None, "growth": None, "loss_making": True, "short": False}, None, 0.05, [])
+    assert s["earnings"]["reliability"] == "von Verlusten geprägt" and s["earnings"]["outlook"] is None
 
 
 def test_is_short():
