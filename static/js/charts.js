@@ -62,15 +62,20 @@ export function dateDE(ms) {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 }
 
+const narrow = () => window.matchMedia("(max-width: 640px)").matches;
+
 export function base(t) {
   return {
     backgroundColor: "transparent",
     animationDuration: 300,
     textStyle: { fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif', color: t.secondary },
     grid: { left: 4, right: 12, top: 40, bottom: 4, containLabel: true },
+    // Auf dem Handy bleibt die Legende einzeilig (zum Blättern), sonst überdeckt sie die Achsenbeschriftung
     legend: {
-      top: 0, left: 0, icon: "roundRect", itemWidth: 14, itemHeight: 4, itemGap: 16,
-      textStyle: { color: t.secondary, fontSize: 13 }, inactiveColor: t.muted,
+      type: narrow() ? "scroll" : "plain",
+      top: 0, left: 0, icon: "roundRect", itemWidth: 14, itemHeight: 4, itemGap: narrow() ? 12 : 16,
+      textStyle: { color: t.secondary, fontSize: narrow() ? 12 : 13 }, inactiveColor: t.muted,
+      pageIconColor: t.secondary, pageIconInactiveColor: t.muted, pageTextStyle: { color: t.muted },
     },
     tooltip: {
       trigger: "axis", confine: true,

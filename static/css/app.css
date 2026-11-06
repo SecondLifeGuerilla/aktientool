@@ -1021,3 +1021,63 @@ dialog.grp-dialog.grp-manage { width: min(1040px, calc(100vw - 40px)); }
 .grp-tpl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
 .grp-tpl .field-label { flex-basis: 100%; }
 .grp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grid); }
+
+/* Handy und schmale Fenster: Kopfzeile mit Menüknopf, Suche über die volle Breite, engere Ränder.
+   Die volle Navigation braucht rund 920 px; darunter bliebe für die Suche kaum Platz. */
+.nav-toggle { display: none; }
+@media (min-width: 1241px) {
+  .topbar-inner { gap: 14px; }
+  .mainnav { gap: 2px; }
+  .mainnav a, .navmore > summary { padding: 6px 7px; }
+}
+.nav-toggle svg { width: 20px; height: 20px; display: block; }
+.nav-toggle path { stroke: currentColor; stroke-width: 2; stroke-linecap: round; fill: none; }
+@media (max-width: 1240px) {
+  .topbar-inner { flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; }
+  .nav-toggle { display: inline-grid; place-items: center; margin-left: auto; order: 2; height: 38px; min-width: 38px; }
+  .topbar.nav-open .nav-toggle { color: var(--text-primary); background: var(--surface-2); }
+  .search input { padding: 9px 12px; font-size: 16px; } /* 16px: iOS zoomt beim Tippen sonst in die Seite */
+  .search .search-kbd { display: none; }
+  .mainnav {
+    order: 4; flex: 1 1 100%; display: none; flex-direction: column; align-items: stretch; gap: 2px; margin: 0;
+    padding: 6px 0 4px; border-top: 1px solid var(--border);
+    max-height: calc(100dvh - 120px); overflow-y: auto; overscroll-behavior: contain;
+  }
+  .topbar.nav-open .mainnav { display: flex; }
+  .mainnav a, .navmore > summary { padding: 10px 12px; font-size: 16px; }
+  .navmore-panel { position: static; box-shadow: none; border: 0; padding: 0 0 0 12px; background: none; }
+  .navmore-btn { padding: 10px 12px; font-size: 16px; }
+  .mainnav .mode-switch { align-self: flex-start; margin: 8px 12px 0; }
+  .mainnav .icon-btn { align-self: flex-start; margin: 6px 0 0 12px; height: 38px; }
+  .mainnav .tour-btn + .icon-btn, .mainnav .mode-switch + .icon-btn { margin-top: 6px; }
+}
+@media (max-width: 640px) {
+  .search { order: 3; flex: 1 1 100%; max-width: none; }
+  .container { padding: 0 16px; }
+  main.container { padding-top: 16px; }
+  h1 { font-size: 23px; }
+  h2 { font-size: 18px; }
+  .card { padding: 16px; }
+  .profile-head .price { font-size: 26px; }
+  .actions { justify-content: flex-start; }
+  /* Eingabefelder mit 16px: iOS zoomt beim Antippen sonst in die Seite */
+  input:not(.cell):not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
+  /* Kennzahl-Kacheln zu zweit statt einzeln untereinander: halbiert die Seitenlänge */
+  .grid.tiles, .glance .grid.tiles, .hist-tiles.grid.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { padding: 12px; }
+  .tile .value { font-size: 20px; }
+  .tile .badge { white-space: normal; }
+  .outlook-dimensions > div { grid-template-columns: 1fr; gap: 4px; }
+  /* Breite Tabellen: kompakter; erste Spalte bleibt beim seitlichen Wischen stehen */
+  table.data { font-size: 13px; }
+  table.data th, table.data td { padding: 7px 8px; }
+  .table-scroll:not(.fits) table.data tr:not(.group):not(.grp-head) > td:first-child:not(.pick),
+  .table-scroll:not(.fits) table.data th:first-child:not(.pick) {
+    position: sticky; left: 0; z-index: 1; background: var(--surface-1);
+    box-shadow: 1px 0 0 var(--grid);
+  }
+  .table-scroll:not(.fits) table.data th:first-child { z-index: 2; }
+  /* in Karten bis an den Kartenrand kleben, sonst scheint daneben der Tabelleninhalt durch */
+  .card.table-scroll:not(.fits) table.data tr:not(.group):not(.grp-head) > td:first-child:not(.pick),
+  .card.table-scroll:not(.fits) table.data th:first-child:not(.pick) { left: -16px; }
+}

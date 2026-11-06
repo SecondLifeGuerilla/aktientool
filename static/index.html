@@ -21,12 +21,15 @@
         <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M6 22l6-7 5 4 9-11"/></svg>
         <span>Aktientool</span>
       </a>
+      <button id="nav-toggle" class="icon-btn nav-toggle" type="button" aria-expanded="false" aria-controls="mainnav" aria-label="Menü öffnen">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+      </button>
       <div class="search" id="search">
         <input id="search-input" type="search" placeholder="Aktie suchen: Name, Ticker, ISIN" autocomplete="off" aria-label="Aktie suchen (Taste /)">
         <kbd class="search-kbd" title="Taste / springt von überall in die Suche">/</kbd>
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
       </div>
-      <nav class="mainnav">
+      <nav class="mainnav" id="mainnav">
         <a href="#/welt" data-nav="welt">Weltauswahl</a>
         <a href="#/screener" data-nav="screener" class="adv">Screener</a>
         <a href="#/trusts" data-nav="trusts" title="Investment Trusts, Closed-End-Fonds und Holdings mit Abschlag zum inneren Wert">Trusts & Holdings</a>

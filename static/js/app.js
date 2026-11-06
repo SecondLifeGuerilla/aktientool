@@ -42,6 +42,7 @@ async function route() {
   restoreScroll(savedY);
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === parts[0]));
   document.getElementById("navmore").open = false;
+  setNavOpen(false);
   if (parts[0] !== "alarme") paintAlertBadge();
   paintTourBtn();
   // Seiten prüfen nach jedem await, ob sie noch aktuell sind (Nutzer kann inzwischen weiternavigiert sein)
@@ -132,7 +133,20 @@ setInterval(() => { checkAlertsIfDue(); paintAlertBadge(); }, 5 * 60 * 1000);
 document.addEventListener("click", (e) => {
   const more = document.getElementById("navmore");
   if (more.open && !more.contains(e.target)) more.open = false;
+  if (!e.target.closest(".topbar") || e.target.closest(".mainnav a")) setNavOpen(false);
 });
+
+// ---- Menü auf schmalen Bildschirmen (Handy): Navigation klappt unter der Kopfzeile auf
+function setNavOpen(open) {
+  const btn = document.getElementById("nav-toggle");
+  document.querySelector(".topbar").classList.toggle("nav-open", open);
+  btn.setAttribute("aria-expanded", String(open));
+  btn.setAttribute("aria-label", open ? "Menü schließen" : "Menü öffnen");
+}
+document.getElementById("nav-toggle").addEventListener("click", () => {
+  setNavOpen(!document.querySelector(".topbar").classList.contains("nav-open"));
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") setNavOpen(false); });
 document.getElementById("keys-btn").addEventListener("click", () => {
   document.getElementById("navmore").open = false;
   showShortcuts();
