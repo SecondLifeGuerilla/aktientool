@@ -13,6 +13,7 @@ import { renderHome } from "./home.js";
 import { setPageKeys, showShortcuts } from "./keys.js";
 import { renderLexicon } from "./lexicon.js";
 import { setViewMode, tourOverride, viewMode } from "./mode.js";
+import { applyStartPage, mobileRoute, setAlarmCount } from "./mobile.js";
 import { enterEntry, restoreScroll } from "./nav.js";
 import { renderProfile } from "./profile.js";
 import { renderScoreCheck } from "./scorecheck.js";
@@ -43,6 +44,7 @@ async function route() {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === parts[0]));
   document.getElementById("navmore").open = false;
   setNavOpen(false);
+  mobileRoute(parts[0] || "start");
   if (parts[0] !== "alarme") paintAlertBadge();
   paintTourBtn();
   // Seiten prüfen nach jedem await, ob sie noch aktuell sind (Nutzer kann inzwischen weiternavigiert sein)
@@ -123,7 +125,8 @@ async function paintAlertBadge() {
     const { status } = await api.alerts();
     badge.textContent = String(status.unseen);
     badge.hidden = !status.unseen;
-  } catch (e) { badge.hidden = true; }
+    setAlarmCount(status.unseen);
+  } catch (e) { badge.hidden = true; setAlarmCount(0); }
 }
 document.addEventListener("alerts-changed", paintAlertBadge);
 document.addEventListener("store-changed", (e) => { if (["alarme", "*"].includes(e.detail.name)) paintAlertBadge(); });
@@ -184,5 +187,6 @@ toTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smoot
 document.body.append(toTop);
 window.addEventListener("scroll", () => { toTop.hidden = window.scrollY < 1400; }, { passive: true });
 
+applyStartPage();
 route();
 initTour(); // laufende Tutorial-Tour nach einem Neuladen fortsetzen

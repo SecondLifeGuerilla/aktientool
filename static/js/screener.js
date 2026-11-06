@@ -106,19 +106,20 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     <p class="secondary" style="max-width:860px;margin-top:6px">
       ${isWatch ? "Ihre gemerkten Aktien mit den wichtigsten Kennzahlen. Aktien fügen Sie im Profil über „Zur Watchlist“ hinzu." :
         "Wählen Sie eine Liste, laden Sie die Kennzahlen und filtern Sie nach Qualität, Dividende und Bewertung. Zum Sortieren auf eine Spaltenüberschrift klicken."}
-      Bereits geladene Aktien kommen aus dem lokalen Cache (6 Stunden gültig).
-      Für US-Firmen und Firmen mit SEC-Berichten (z. B. SAP) gibt es 10+ Jahre Bilanzdaten, für andere nur rund 4 Jahre (markiert mit „(4 J.)“).</p>
-    <div class="card" style="margin-top:14px">
+      <span class="hide-phone">Bereits geladene Aktien kommen aus dem lokalen Cache (6 Stunden gültig).
+      Für US-Firmen und Firmen mit SEC-Berichten (z. B. SAP) gibt es 10+ Jahre Bilanzdaten, für andere nur rund 4 Jahre (markiert mit „(4 J.)“).</span></p>
+    <div class="card phone-filters" style="margin-top:14px">
       <div class="filters">
         <div class="field"><label for="list-select">Liste</label>
           <select id="list-select">${lists.map((l) => `<option ${l === listName ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
-        ${basic ? "" : `<div class="field"><label for="strategy-select">${term("scorecard", "Score-Strategie")}</label>
+        <button class="btn pf-toggle" id="pf-toggle" type="button" aria-expanded="false">Filter ▾</button>
+        ${basic ? "" : `<div class="field pf"><label for="strategy-select">${term("scorecard", "Score-Strategie")}</label>
           <select id="strategy-select">${STRATEGIES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>`}
-        ${filters.map((f) => `<div class="field"><label for="${f.id}">${f.label}</label><input id="${f.id}" inputmode="decimal" placeholder="${f.placeholder}"></div>`).join("")}
-        <div class="field"><label for="f-val">Bewertung</label>
+        ${filters.map((f) => `<div class="field pf"><label for="${f.id}">${f.label}</label><input id="${f.id}" inputmode="decimal" placeholder="${f.placeholder}"></div>`).join("")}
+        <div class="field pf"><label for="f-val">Bewertung</label>
           <select id="f-val"><option value="">alle</option><option value="0.1">höchstens fair (bis +10 %)</option><option value="-0.1">unterbewertet (unter −10 %)</option></select></div>
-        <button class="btn" id="reset-btn" type="button">Filter zurücksetzen</button>
-        <button class="btn" id="csv-btn" type="button" title="Die angezeigten Zeilen mit allen geladenen Kennzahlen als CSV-Datei (für Excel & Co.)">CSV</button>
+        <button class="btn pf" id="reset-btn" type="button">Filter zurücksetzen</button>
+        <button class="btn pf" id="csv-btn" type="button" title="Die angezeigten Zeilen mit allen geladenen Kennzahlen als CSV-Datei (für Excel & Co.)">CSV</button>
         <div class="field" id="custom-field" style="flex-basis:100%" ${listName === CUSTOM ? "" : "hidden"}>
           <label for="custom-input">Ticker, getrennt durch Komma oder Leerzeichen (Yahoo-Schreibweise, z. B. ALV.DE, NESN.SW, ULVR.L)</label>
           <textarea id="custom-input" placeholder="AAPL, MSFT, ALV.DE">${esc(customText)}</textarea>
@@ -386,6 +387,12 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
   $("#list-select").addEventListener("change", (e) => { location.hash = `#/screener?list=${encodeURIComponent(e.target.value)}`; });
   $("#strategy-select")?.addEventListener("change", (e) => { state.strategy = e.target.value; paint(); });
   root.querySelectorAll(".filters input, #f-val").forEach((el) => el.addEventListener("input", paint));
+  // Handy: Filterfelder eingeklappt, damit die Liste gleich sichtbar ist
+  $("#pf-toggle").addEventListener("click", (e) => {
+    const open = e.currentTarget.closest(".phone-filters").classList.toggle("pf-open");
+    e.currentTarget.setAttribute("aria-expanded", String(open));
+    e.currentTarget.textContent = open ? "Filter ▴" : "Filter ▾";
+  });
   $("#reset-btn").addEventListener("click", () => {
     root.querySelectorAll(".filters input").forEach((el) => { el.value = ""; });
     $("#f-val").value = "";

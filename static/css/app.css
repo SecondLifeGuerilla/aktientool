@@ -1081,3 +1081,100 @@ dialog.grp-dialog.grp-manage { width: min(1040px, calc(100vw - 40px)); }
   .card.table-scroll:not(.fits) table.data tr:not(.group):not(.grp-head) > td:first-child:not(.pick),
   .card.table-scroll:not(.fits) table.data th:first-child:not(.pick) { left: -16px; }
 }
+
+/* Handy wie eine App: Tab-Leiste unten, „Mehr“ als Bottom-Sheet, Kopfzeile blendet beim Runterscrollen aus (mobile.js) */
+.tabbar, .sheet, .sheet-backdrop { display: none; }
+@media (max-width: 640px) {
+  :root { --tabbar-h: calc(58px + env(safe-area-inset-bottom)); }
+  body { padding-bottom: var(--tabbar-h); }
+  .topbar { transition: transform .22s ease; padding-top: env(safe-area-inset-top); }
+  .bar-hidden .topbar { transform: translateY(-100%); }
+  .bar-hidden .subnav, .bar-hidden .table-scroll.fits table.screener th { top: 0; }
+  .subnav, .table-scroll.fits table.screener th { transition: top .22s ease; }
+  /* eine Zeile: Logo + Suche; Navigation sitzt unten */
+  .topbar-inner { flex-wrap: nowrap; padding: 8px 12px; gap: 10px; }
+  .brand span, .nav-toggle, .mainnav { display: none !important; }
+  .search { order: 2; flex: 1 1 auto; }
+  .tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; height: var(--tabbar-h);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--page) 92%, transparent); backdrop-filter: saturate(1.4) blur(12px);
+    border-top: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1 1 0; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; border: 0; background: none; color: var(--text-muted); font: inherit; font-size: 11px; font-weight: 550;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .tab:hover { text-decoration: none; }
+  .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+  .tab svg, .sheet-item svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .tab[aria-current="page"] { color: var(--accent-ink); }
+  .tab[aria-current="page"] svg { stroke-width: 2.2; }
+  .tab:active { background: var(--surface-2); }
+  .tab-badge {
+    position: absolute; top: 5px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+    background: var(--status-critical); color: #fff; font-size: 10px; font-weight: 700; font-style: normal; line-height: 17px; text-align: center;
+  }
+  .sheet-backdrop { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, .35); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
+  .sheet {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 85; max-height: 86dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px 16px calc(var(--tabbar-h) + 12px); background: var(--surface-1); border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, .2); transform: translateY(100%); visibility: hidden; transition: transform .25s ease, visibility .25s;
+  }
+  .sheet.open { transform: none; visibility: visible; }
+  .sheet-open body { overflow: hidden; }
+  .sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--grid); margin: 4px auto 10px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .sheet-head .linklike { font-size: 14px; padding: 8px 0; }
+  .sheet-hint { font-size: 13px; margin: -4px 0 10px; }
+  .sheet-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .sheet-item {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 2px 10px; min-height: 72px;
+    border: 1px solid transparent; border-radius: 12px; background: var(--surface-2); color: var(--text-primary); font: inherit; font-size: 12px;
+    text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .sheet-item:hover { text-decoration: none; }
+  .sheet-item span { overflow-wrap: anywhere; line-height: 1.2; }
+  .sheet-item[aria-current="page"] { color: var(--accent-ink); border-color: var(--accent); }
+  .sheet-item .tab-badge { top: 6px; }
+  .editing .sheet-item { color: var(--text-secondary); }
+  .editing .sheet-item[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-ink); }
+  .sheet-pos {
+    position: absolute; top: 5px; right: 6px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-style: normal; font-weight: 700; line-height: 18px;
+  }
+  .sheet-settings { margin-top: 16px; border-top: 1px solid var(--grid); }
+  .sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
+  .sheet-row select { max-width: 55%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1); }
+  .sheet-row .segmented button { padding: 8px 14px; }
+  /* schwebende Elemente über die Tab-Leiste heben */
+  .to-top { bottom: calc(var(--tabbar-h) + 12px); right: 12px; }
+  .toasts { left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 12px); max-width: none; }
+  .coach { right: 8px; left: 8px; width: auto; bottom: calc(var(--tabbar-h) + 8px); max-height: 60dvh; }
+  .select-bar { bottom: calc(var(--tabbar-h) + 10px); }
+  .footer { padding-bottom: 20px; }
+}
+/* Touch-Bildschirme: Tippflächen mind. ~40 px, Hover-only-Elemente sichtbar */
+@media (pointer: coarse) {
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 34px; padding: 6px 12px; }
+  .icon-btn { min-height: 40px; min-width: 40px; }
+  .subnav button { padding: 10px 14px; }
+  .segmented button { min-height: 36px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  td.pick input, th.pick input { width: 22px; height: 22px; }
+  table.data td.pick, table.data th.pick { width: 36px; }
+  td .tags .grp-add { opacity: 1; }
+  .search-results li { padding: 12px 10px; }
+  .grp-chip { min-height: 34px; }
+  details > summary { padding-top: 6px; padding-bottom: 6px; }
+}
+.pf-toggle { display: none; }
+@media (max-width: 640px) {
+  .hide-phone { display: none; }
+  .phone-filters .filters { align-items: flex-end; }
+  .phone-filters .pf-toggle { display: inline-block; }
+  .phone-filters:not(.pf-open) .pf { display: none; }
+}
