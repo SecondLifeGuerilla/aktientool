@@ -1,5 +1,5 @@
 // Screener und Watchlist: Kennzahlen für eine Liste von Aktien laden, filtern und sortieren
-import { api, getWatchlist, toggleWatch } from "./api.js";
+import { api, getWatchlist, setWatchMany, toggleWatch } from "./api.js";
 import { trackBrowse } from "./browse.js";
 import { NOT_TR_TAG } from "./broker.js";
 import { csvNum, downloadCsv, today } from "./csv.js";
@@ -8,8 +8,9 @@ import { term } from "./glossary.js";
 import { isBasic } from "./mode.js";
 import { toast } from "./toast.js";
 import { flipWatch } from "./watch.js";
-import { childrenOf, clone, flatten, getGroups, groupsOf, openAssign, openManage, pathLabel, saveWithUndo, symbolsIn, topAncestor, ungrouped,
+import { childrenOf, clone, flatten, getGroups, groupsOf, openAssign, openManage, pathLabel, saveGroups, saveWithUndo, symbolsIn, topAncestor, ungrouped,
   descendantIds } from "./watchgroups.js";
+import { mergeGroups, parseWatchCsv } from "./watchimport.js";
 import { presetHref } from "./world.js";
 
 const esc = F.escapeHtml;
@@ -104,7 +105,7 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
   root.innerHTML = `
     <h1>${isWatch ? "Watchlist" : "Screener"}</h1>
     <p class="secondary" style="max-width:860px;margin-top:6px">
-      ${isWatch ? "Ihre gemerkten Aktien mit den wichtigsten Kennzahlen. Aktien fügen Sie im Profil über „Zur Watchlist“ hinzu." :
+      ${isWatch ? "Ihre gemerkten Aktien mit den wichtigsten Kennzahlen. Aktien fügen Sie im Profil über „Zur Watchlist“ hinzu oder übernehmen sie unten aus einer CSV-Datei." :
         "Wählen Sie eine Liste, laden Sie die Kennzahlen und filtern Sie nach Qualität, Dividende und Bewertung. Zum Sortieren auf eine Spaltenüberschrift klicken."}
       <span class="hide-phone">Bereits geladene Aktien kommen aus dem lokalen Cache (6 Stunden gültig).
       Für US-Firmen und Firmen mit SEC-Berichten (z. B. SAP) gibt es 10+ Jahre Bilanzdaten, für andere nur rund 4 Jahre (markiert mit „(4 J.)“).</span></p>
@@ -129,7 +130,15 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
       <div class="progress"><div id="progress-bar"></div></div>
       <div class="muted" id="status-line" style="margin-top:6px;font-size:13px"></div>
     </div>
-    ${isWatch ? '<div class="card grp-bar" id="grp-bar" style="margin-top:12px"></div>' : ""}
+    ${isWatch ? `<div class="card grp-bar" id="grp-bar" style="margin-top:12px"></div>
+    <details class="card import-box" id="wimp-box" style="margin-top:12px"><summary>Aktien aus einer Tabelle übernehmen (CSV)</summary>
+      <p class="secondary" style="font-size:14px;margin:10px 0 8px">Eine Zeile je Aktie: <b>Ticker; Gruppe</b> – die Gruppe darf fehlen.
+        Untergruppen mit „›“ oder „&gt;“ (z. B. <i>Zukunftsmärkte › KI</i>), mehrere Gruppen mit „|“. Mit Kopfzeile wird die Spalte „Ticker“ bzw. „Gruppe“
+        erkannt, auch in einem CSV-Export der Watchlist. Getrennt durch Semikolon, Komma oder Tab. Vorhandene Aktien und Gruppen bleiben.</p>
+      <textarea id="wimp-text" spellcheck="false" placeholder="Ticker;Gruppe&#10;NVDA;Zukunftsmärkte › KI&#10;ALV.DE;Dividende"></textarea>
+      <div class="toolbar" style="margin:8px 0 0"><label class="btn small" style="cursor:pointer">Datei wählen …<input type="file" id="wimp-file" accept=".csv,.txt,text/csv,text/plain" hidden></label>
+        <button class="btn small primary" type="button" id="wimp-go" disabled>Importieren</button><span class="import-preview" id="wimp-preview"></span></div>
+    </details>` : ""}
     <div class="card table-scroll" style="margin-top:12px;padding:8px 8px 4px">
       <table class="data screener">
         <thead><tr>${cols.map((c) => (c.key === "pick"
@@ -519,6 +528,51 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     };
     document.addEventListener("watchgroups-changed", onGroups);
     paintGroupBar();
+
+    // ---- CSV-Import: Vorschau beim Tippen bzw. nach Dateiwahl, dann Watchlist und Gruppen ergänzen (mit „Rückgängig“)
+    let parsed = { items: [], errors: [] };
+    const preview = () => {
+      parsed = parseWatchCsv($("#wimp-text").value);
+      const { items, errors } = parsed;
+      const fresh = items.filter((it) => !watch.has(it.symbol)).length;
+      $("#wimp-preview").innerHTML = !items.length && !errors.length ? ""
+        : `${items.length ? `<span class="good">${F.int(items.length)} ${items.length === 1 ? "Aktie" : "Aktien"} erkannt, davon ${F.int(fresh)} neu</span>` : ""}
+          ${errors.length ? `<span class="bad">${errors.length === 1 ? "" : `${errors.length} Fehler: `}${esc(errors.slice(0, 3).join(" · "))}${errors.length > 3 ? " …" : ""}</span>` : ""}`;
+      $("#wimp-go").disabled = !items.length || errors.length > 0;
+      $("#wimp-go").title = errors.length ? "Erst die markierten Zeilen korrigieren" : "";
+    };
+    const newId = () => `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    $("#wimp-text").addEventListener("input", preview);
+    $("#wimp-file").addEventListener("change", async (e) => {
+      if (!e.target.files[0]) return;
+      $("#wimp-text").value = await e.target.files[0].text();
+      e.target.value = "";
+      preview();
+    });
+    $("#wimp-go").addEventListener("click", async () => {
+      const { items } = parsed;
+      if (!items.length) return;
+      try {
+        const prev = clone(await getGroups());
+        const added = await setWatchMany(items.map((it) => it.symbol), true);
+        const { groups: next, created } = mergeGroups(prev, items, newId);
+        if (created || items.some((it) => it.groups.length)) await saveGroups(next);
+        watch = await getWatchlist();
+        $("#wimp-text").value = "";
+        $("#wimp-box").open = false;
+        preview();
+        toast(`${F.int(added.length)} ${added.length === 1 ? "Aktie" : "Aktien"} neu auf der Watchlist${created ? `, ${F.int(created)} ${created === 1 ? "Gruppe" : "Gruppen"} angelegt` : ""}.`, {
+          kind: "good", action: "Rückgängig",
+          onAction: async () => {
+            await saveGroups(prev);
+            await setWatchMany(added, false);
+            watch = await getWatchlist();
+            if (isCurrent()) { paintGroupBar(); load([...watch]); }
+          },
+        });
+        if (isCurrent()) { paintGroupBar(); load([...watch]); }
+      } catch (err) { toast(err.message, { kind: "bad", ms: 8000 }); }
+    });
   }
 
   load(symbolsFor(listName));
