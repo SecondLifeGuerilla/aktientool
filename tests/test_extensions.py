@@ -456,6 +456,17 @@ class TestTradeRepublic:
         assert own["tradable"] and own["override"]
         assert world.trade_republic_info("AAPL", ["US0378331005"], None, {"AAPL": False})["tradable"] is False
 
+    def test_adr_symbol_checks_home_listing(self, monkeypatch):
+        from aktientool import world
+        from aktientool.sources import lsx
+        prepared = {"by_symbol": {"NOVO-B.CO": {"symbol": "NOVO-B.CO", "isin": "DK0062498333"}},
+                    "alt": {"NOVO-B.CO": ["US6701002056"]}, "universe": [{"symbol": "NOVO-B.CO", "isin": "DK0062498333"}]}
+        monkeypatch.setattr(world, "_prepared", lambda: prepared)
+        monkeypatch.setattr(lsx, "current", lambda: {"date": "2026-11-05", "isins": {"DK0062498333": ["A3EU6F", "NOVO-NORDISK B", "AKTIE"]}})
+        monkeypatch.setattr(userdata, "tradable_overrides", lambda: {})
+        nvo = world.trade_republic("NVO", "US6701002056")
+        assert nvo["tradable"] and nvo["isin"] == "DK0062498333" and nvo["other_listing"]
+
     def test_rows_get_compact_flags(self):
         from aktientool import world
         rows = [{"symbol": "2330.TW", "isin": "TW0002330008"}, {"symbol": "AAPL", "isin": "US0378331005"},

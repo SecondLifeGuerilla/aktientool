@@ -746,9 +746,12 @@ def trade_republic(symbol: str, isin: str | None) -> dict:
         p = _prepared()
         row = p["by_symbol"].get(symbol) if p else None
         alt = p["alt"].get(symbol, []) if p else []
-    isins = list(dict.fromkeys(i for i in [isin, row.get("isin") if row else None, *alt] if i))
+    home = symbol_for_isin(isin) if isin and not row else None  # ADR o. Ä. (z. B. NVO): Heimatnotierung NOVO-B.CO mitprüfen
+    if home and home != symbol:
+        alt = isins(home)
+    isins_ = list(dict.fromkeys(i for i in [isin, row.get("isin") if row else None, *alt] if i))
     listing = lsx.current()
-    info = trade_republic_info(symbol, isins, listing, userdata.tradable_overrides())
+    info = trade_republic_info(symbol, isins_, listing, userdata.tradable_overrides())
     info["list_date"] = listing.get("date") if listing else None
     return info
 
