@@ -195,6 +195,9 @@ main.container { padding-top: 24px; padding-bottom: 48px; min-height: 70vh; }
 .profile-head .price { font-size: 30px; font-weight: 640; margin-top: 10px; }
 .profile-head .price small { font-size: 15px; font-weight: 500; margin-left: 8px; }
 .profile-head .price-orig { font-size: 13px; margin-top: 2px; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good-ink); margin-right: 6px; vertical-align: 1px; animation: live-pulse 2s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 .actions { display: flex; gap: 8px; }
 .btn {
   border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);

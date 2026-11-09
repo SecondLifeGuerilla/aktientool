@@ -775,6 +775,20 @@ def symbol_for_isin(isin: str) -> str | None:
         return p["by_isin"].get(isin)
 
 
+def isins(symbols: list[str]) -> dict[str, str]:
+    """ISIN je Ticker laut Weltauswahl (die bei Trade Republic gehandelte, falls abweichend); fehlende fallen weg."""
+    with _lock:
+        p = _prepared()
+        rows = p["by_symbol"] if p else {}
+        out = {}
+        for s in symbols:
+            r = rows.get(s)
+            isin = r and (r.get("tr_isin") or r.get("isin"))
+            if isin:
+                out[s] = isin
+        return out
+
+
 def tradable_flags(symbols: list[str]) -> dict[str, bool]:
     """Handelbar ja/nein für die Ticker, die in der Weltauswahl stehen (Suchvorschläge); andere fehlen."""
     overrides = userdata.tradable_overrides()

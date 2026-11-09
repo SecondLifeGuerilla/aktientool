@@ -100,6 +100,7 @@ export const api = {
   watchGroups: () => local(() => store.watchGroups()),
   saveWatchGroups: (groups) => local(() => store.saveWatchGroups(groups)),
   quotes: (syms) => request("GET", `/api/quotes?s=${enc(syms.join(","))}`),
+  live: (isins) => request("GET", `/api/live?i=${enc(isins.join(","))}`),
   fx: (ccys) => request("GET", `/api/fx?c=${enc(ccys.join(","))}`),
   underlying: (sym) => request("GET", `/api/basiswert/${enc(sym)}`),
   derivative: (id) => request("GET", `/api/derivat/${enc(id)}`),

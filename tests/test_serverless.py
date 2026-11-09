@@ -86,3 +86,30 @@ def test_world_endpoint_without_data_explains(serverless, monkeypatch):
     st = client.get("/api/world/status").get_json()
     assert not st["ready"] and st["managed"] and st["error"]
     assert client.get("/api/info").get_json()["serverless"] is True
+
+
+# ---------------------------------------------------------------- Live-Kurse von Tradegate
+
+def test_tradegate_parse():
+    from aktientool.sources import tradegate
+    q = tradegate.parse({"bid": 158.56, "ask": 158.64, "delta": -5.27, "executions": 15083, "last": "158,70",
+                         "high": 160.26, "low": 156.16, "close": 167.52})
+    assert q["price"] == 158.70 and abs(q["change"] + 0.0527) < 1e-9 and q["bid"] == 158.56 and q["source"] == "Tradegate"
+    assert tradegate.parse({"last": "1.234,50", "close": "1.200,00", "executions": 3})["price"] == 1234.5
+    assert tradegate.parse({"last": "1.234,50", "close": "1.200,00", "executions": 3})["change"] == pytest.approx(1234.5 / 1200 - 1)
+    assert tradegate.parse({"last": "158,70", "executions": 0}) is None  # heute kein Handel
+    assert tradegate.parse({"last": "-", "executions": 5}) is None
+
+
+def test_quotes_prefer_live_price(monkeypatch):
+    from aktientool.sources import tradegate
+    monkeypatch.setattr(tradegate, "quotes", lambda isins: {
+        "US67066G1040": {"price": 158.7, "change": -0.0527, "bid": 158.5, "ask": 158.9, "source": "Tradegate"},
+        "XX0000000000": {"price": 5.0, "change": 0.1, "bid": None, "ask": None, "source": "Tradegate"}})
+    rows = [{"symbol": "NVDA", "price": 166.76, "change": 0.0233, "currency": "EUR", "original_price": 186.64},
+            {"symbol": "ODD", "price": 100.0, "change": 0.0, "currency": "EUR"},
+            {"symbol": "KO", "price": 60.0, "change": 0.01, "currency": "EUR"}]
+    out = {r["symbol"]: r for r in server._with_live(rows, {"NVDA": "US67066G1040", "ODD": "XX0000000000"})}
+    assert out["NVDA"]["price"] == 158.7 and out["NVDA"]["live_source"] == "Tradegate" and out["NVDA"]["original_price"] == 186.64
+    assert out["ODD"]["price"] == 100.0 and "live_source" not in out["ODD"]  # andere Gattung: verworfen
+    assert out["KO"]["price"] == 60.0

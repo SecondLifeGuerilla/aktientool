@@ -119,10 +119,52 @@ export async function renderProfile(root, symbol, isCurrent, refresh = false) {
   root.innerHTML = [browseBar(p.symbol), head(p), trustCard(p), glance(p), overview(), subnav(), ...sections().filter(([id]) => !TOP_SECTIONS.has(id)).map(([id]) => build[id](p))].join("");
   wireBrowseBar(root, p.symbol);
   loadOutlook(root, p, isCurrent);
+  startLive(root, p, isCurrent);
   wire(root, p, isCurrent);
 }
 
 // ---------------------------------------------------------------- Kopf
+
+// Kurs im Kopf: live in Euro von Tradegate, sonst der letzte Kurs von Yahoo (vor US-Börsenbeginn ist das bei US-Aktien
+// der Schlusskurs vom Vortag). Kennzahlen und Bewertung beruhen immer auf dem Yahoo-Kurs; das steht dann darunter.
+function priceLine(p) {
+  const f = p.facts;
+  const ccy = p.currency;
+  const live = ccy === "EUR" ? p.live : null;
+  const big = (price, change) => `<div class="price">${F.money(price, ccy)} <small class="${(change ?? 0) >= 0 ? "good" : "bad"}">${F.signedPct(change, 2)}</small></div>`;
+  const home = foreign(p) ? `${F.money(p.eur.original_price, p.eur.original_currency)} · 1 ${esc(fx1(p))} = ${F.num(fxRate(p), 4)} €` : "";
+  if (live) {
+    const time = new Date(live.time * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const spread = F.isNum(live.bid) && F.isNum(live.ask) ? ` · Geld ${F.money(live.bid, "EUR")} / Brief ${F.money(live.ask, "EUR")}` : "";
+    return `${big(live.price, live.change)}
+      <div class="muted price-orig"><span class="live-dot" title="Live-Kurs, wird jede Minute aktualisiert"></span>live bei Tradegate, ${time} Uhr${spread}</div>
+      <div class="muted price-orig" title="Kennzahlen, fairer Wert und Scores rechnen mit diesem Kurs">Analyse mit Kurs vom ${F.date(p.data.last_price_date)}:
+        ${F.money(f.price, ccy)}${home ? ` (an der Börse ${home})` : ""}</div>`;
+  }
+  return `${big(f.price, f.change)}
+    ${home ? `<div class="muted price-orig">an der Börse ${home} · Kurs vom ${F.date(p.data.last_price_date)}</div>`
+      : !p.eur ? '<div class="muted price-orig">Euro-Umrechnung gerade nicht möglich (kein Wechselkurs); Beträge in Originalwährung.</div>' : ""}`;
+}
+
+// Live-Kurs jede Minute nachladen, solange das Profil offen und der Tab sichtbar ist
+function startLive(root, p, isCurrent) {
+  const isin = p.live?.isin || p.trade_republic?.isin || p.facts.isin;
+  if (!isin || p.currency !== "EUR") return;
+  const timer = setInterval(async () => {
+    if (!isCurrent()) { clearInterval(timer); return; }
+    if (document.hidden) return;
+    try {
+      const q = (await api.live([isin]))[isin];
+      if (!q || !isCurrent()) return;
+      const ref = p.live?.price || p.facts.price;
+      if (ref && !(q.price / ref > 0.67 && q.price / ref < 1.5)) return; // andere Gattung, nicht diese Aktie
+      p.live = { ...q, isin };
+      const el = root.querySelector("#head-price");
+      if (el) el.innerHTML = priceLine(p);
+    } catch (e) { /* nächster Versuch in einer Minute */ }
+  }, 60000);
+}
+
 function head(p) {
   const f = p.facts;
   const d = p.data;
@@ -155,9 +197,7 @@ function head(p) {
         <h1>${esc(p.name)}</h1>
         <div class="meta">${esc(p.symbol)} · ${esc(p.exchange || "")} · ${esc(p.eur?.original_currency || ccy || "")}</div>
         <div class="tr-line" id="tr-line">${trLine(p.trade_republic, F.date)}</div>
-        <div class="price">${F.money(f.price, ccy)} <small class="${(f.change ?? 0) >= 0 ? "good" : "bad"}">${F.signedPct(f.change, 2)}</small></div>
-        ${foreign(p) ? `<div class="muted price-orig">an der Börse ${F.money(p.eur.original_price, p.eur.original_currency)} · 1 ${esc(fx1(p))} = ${F.num(fxRate(p), 4)} €</div>`
-          : !p.eur ? '<div class="muted price-orig">Euro-Umrechnung gerade nicht möglich (kein Wechselkurs); Beträge in Originalwährung.</div>' : ""}
+        <div id="head-price">${priceLine(p)}</div>
       </div>
       <div class="actions">
         <button class="btn" id="watch-btn" type="button">☆ Zur Watchlist</button>

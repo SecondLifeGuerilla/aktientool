@@ -23,7 +23,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from . import alerts, config, deep, derivate, eur, outlook, remote, service, snapshots, trusts, userdata, world
 from .analysis import metrics
 from .cache import cached
-from .sources import fx, news, onvista, wiki, yahoo, yahoo_screener
+from .sources import fx, news, onvista, tradegate, wiki, yahoo, yahoo_screener
 
 log = logging.getLogger(__name__)
 app = Flask(__name__, static_folder=None)
@@ -144,6 +144,8 @@ def api_profile(symbol: str):
     sym = _symbol(symbol)
     prof = eur.profile(service.build_profile(sym, refresh=request.args.get("refresh") == "1"))
     prof["trade_republic"] = world.trade_republic(sym, prof["facts"].get("isin"))
+    isin = prof["trade_republic"].get("isin") or prof["facts"].get("isin")
+    prof["live"] = _live(isin, prof["facts"].get("price") if prof.get("currency") == "EUR" else None)
     try:  # Trust oder Holding: Abschlag zum inneren Wert (das Profil soll daran nie scheitern)
         prof["trust"] = trusts.find(sym, prof["facts"].get("isin"))
     except Exception as e:
@@ -271,18 +273,54 @@ def _symbols(raw: str, limit: int = 100) -> list[str]:
 
 # ---------------------------------------------------------------- Kurse und Wechselkurse (schnell, eine Sammelabfrage)
 
+def _live(isin: str | None, eur_price: float | None = None) -> dict | None:
+    """Live-Kurs in Euro von Tradegate, wenn dort heute gehandelt wurde. Weicht er vom Yahoo-Kurs (in Euro) um mehr als
+    ein Drittel ab, gehört die ISIN wohl zu einer anderen Gattung: dann lieber ohne."""
+    try:
+        q = tradegate.quote(isin)
+    except Exception as e:
+        log.info("Live-Kurs %s: %s", isin, e)
+        return None
+    if q and eur_price and not (0.67 < q["price"] / eur_price < 1.5):
+        return None
+    return q and {**q, "isin": isin}
+
+
+def _with_live(quotes: list[dict], isins: dict[str, str]) -> list[dict]:
+    """Euro-Kurse von Yahoo durch Tradegate ersetzen, wo es einen Live-Kurs gibt (vor US-Börsenbeginn ist der
+    Yahoo-Kurs einer US-Aktie der Schlusskurs vom Vortag). Der Kurs an der Heimatbörse bleibt in original_price."""
+    live = tradegate.quotes([isins[q["symbol"]] for q in quotes if q.get("symbol") in isins])
+    out = []
+    for q in quotes:
+        t = live.get(isins.get(q.get("symbol"), ""))
+        yahoo_eur = q.get("price") if q.get("currency") == "EUR" else None
+        if t and (not yahoo_eur or 0.67 < t["price"] / yahoo_eur < 1.5):
+            q = {**q, "price": t["price"], "change": t["change"], "currency": "EUR", "live_source": t["source"],
+                 "bid": t["bid"], "ask": t["ask"]}
+        out.append(q)
+    return out
+
+
+@app.get("/api/live")
+def api_live():
+    """Live-Kurse in Euro (Tradegate) je ISIN: ?i=ISIN,ISIN …  -> {ISIN: {price, change, bid, ask, …}}."""
+    isins = [i.strip().upper() for i in request.args.get("i", "").split(",") if i.strip()][:tradegate.MAX_PER_CALL]
+    return jsonify(tradegate.quotes(isins))
+
+
 @app.get("/api/quotes")
 def api_quotes():
     syms = _symbols(request.args.get("s", ""))
     if not syms:
         return jsonify([])
-    return jsonify(eur.quotes([{"symbol": q.get("symbol"), "price": q.get("regularMarketPrice"), "currency": q.get("currency"),
+    rows = eur.quotes([{"symbol": q.get("symbol"), "price": q.get("regularMarketPrice"), "currency": q.get("currency"),
                      "change": (q.get("regularMarketChangePercent") or 0) / 100, "name": q.get("longName") or q.get("shortName"),
                      # nächster (oder letzter) Zahlentermin und Dividenden-Zahltag, für die Startseite
                      "earnings_date": _day(q.get("earningsTimestampStart") or q.get("earningsTimestamp")),
                      "earnings_estimate": bool(q.get("isEarningsDateEstimate")),
                      "dividend_date": _day(q.get("dividendDate"))}
-                    for q in yahoo_screener.quotes(syms)]))
+                    for q in yahoo_screener.quotes(syms)])
+    return jsonify(_with_live(rows, world.isins(syms)))
 
 
 def _day(ts) -> str | None:
