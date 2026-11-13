@@ -1181,3 +1181,9 @@ dialog.grp-dialog.grp-manage { width: min(1040px, calc(100vw - 40px)); }
   .phone-filters .pf-toggle { display: inline-block; }
   .phone-filters:not(.pf-open) .pf { display: none; }
 }
+
+/* Weltauswahl: Strategie der Kauf-Checkliste, Hinweis auf dünne Datenlage, Warnung vor einer Value-Falle */
+.strategy-pick { margin-left: auto; font-size: 13px; color: var(--text-secondary); gap: 6px; }
+.strategy-pick select { font-size: 13px; }
+.coverage-note { font-size: 13px; margin: 8px 2px 0; }
+.trap-notice { margin-top: 14px; max-width: 900px; border-left: 3px solid var(--status-serious); }

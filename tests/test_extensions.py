@@ -258,11 +258,13 @@ class TestDeep:
         deep.merge_into(row, {"t": 1, "err": "x"})
         assert row == {"price": 1.0}
 
-    def test_old_entries_with_stability_but_no_growth_are_renewed(self):
+    def test_entries_of_an_older_version_are_renewed(self):
         now = 1_800_000_000
         assert not deep._is_fresh({"t": now, "stab": 0.46}, now)  # vor Version 2, typisch für Verlustreihen
-        assert deep._is_fresh({"t": now, "stab": 0.9, "growth": 0.08}, now)
+        # vor Version 3 lief die Tiefenanalyse im täglichen Workflow ohne SEC-Daten
+        assert not deep._is_fresh({"t": now, "v": 2, "stab": 0.9, "growth": 0.08}, now)
         assert deep._is_fresh({**deep.compact({**self.ROW, "earnings_growth": None}), "t": now}, now)
+        assert not deep._is_fresh({"t": now, "err": "x"}, now + deep.ERROR_RETRY + 1)
 
 
 # ---------------------------------------------------------------- Alarme und Nutzerdaten

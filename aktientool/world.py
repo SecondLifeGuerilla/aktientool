@@ -104,6 +104,11 @@ MIN_HOME_TRADING_SHARE = 0.05
 # Vorzugsaktien mit fester Dividende (BAC-PB, CSE-PA.TO, VOLO-PREF.ST) und Thai-NVDRs (GULF-R.BK) sind keine Stammaktien
 PREFERRED = re.compile(r"-(P[A-Z]{0,2}(-[A-Z])?|PREF)(\.[A-Z]+)?$")
 NVDR = re.compile(r"-R\.BK$")
+# Börsengehandelte Fonds und Rohstoff-Trusts, die Yahoo als Aktie führt (iShares Core S&P 500 an der Börse Santiago,
+# Sprott Physical Gold …): keine Unternehmen, Scores und KGV wären sinnlos. Investment-Trusts und Holdings bleiben,
+# für sie gibt es die Seite „Trusts & Holdings“.
+FUND_NAME = re.compile(r"\b(ETF|ETN|ETC|UCITS)\b|^iShares\b|\bNAFTRAC\b|\bPhysical (Gold|Silver|Platinum|Palladium|Uranium)\b"
+                       r"|\bfondo de inversi[oó]n\b", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------- Heimatnotierung und Land
@@ -182,8 +187,11 @@ def _round(x, digits: int = 4):
 def make_listing(quote: dict, market: str, rates: dict[str, float]) -> dict | None:
     if quote.get("quoteType", "EQUITY") != "EQUITY" or PREFERRED.search(quote["symbol"]):
         return None
-    if "%" in (quote.get("longName") or quote.get("shortName") or ""):
+    name = quote.get("longName") or quote.get("shortName") or ""
+    if "%" in name:
         return None  # Anleihen, die Yahoo als Aktie führt („3.1% NTS 17/02/27“)
+    if FUND_NAME.search(name):
+        return None
     major, factor = fx.split_currency(quote.get("currency"))
     rate = rates.get(major)
     if rate is None:
@@ -301,8 +309,12 @@ FACTORS = {
     "score_growth": [("revenue_growth", 1), ("eps_growth", 1), ("eps_growth_next", 1)],
     "score_dividend": [("div_yield", 1), ("div_years", 1), ("payout", -1)],
     "score_momentum": [("perf_1y", 1), ("momentum", 1), ("from_high", 1)],
+    # Beständigkeit (aus der Tiefenanalyse): Gewinnstabilität über viele Jahre und durchschnittliche Kapitalrendite.
+    # Sie bremst Zykliker, die auf dem Gewinnhoch bei Marge, KGV, Wachstum und Kurs zugleich glänzen.
+    "score_stability": [("d_stab", 1), ("d_roic_avg", 1)],
 }
-TOTAL_PARTS = ["score_quality", "score_value", "score_growth", "score_momentum"]
+TOTAL_PARTS = ["score_quality", "score_value", "score_growth", "score_momentum", "score_stability"]
+SCORE_KEYS = [*FACTORS, "score_total", "magic_formula"]
 MIN_PEERS = 20  # Sektoren mit weniger Vergleichswerten werden mit allen Aktien verglichen
 MAGIC_EXCLUDED = {"Finanzen", "Versorger"}  # wie bei Greenblatt
 
@@ -337,12 +349,32 @@ def _sector_ranks(rows: list[dict], values: list[float | None]) -> list[float | 
     return result
 
 
+SHORT_STABILITY_CAP = 0.5  # wie in der Scorecard: Stabilität aus weniger als fünf Jahren zählt höchstens neutral
+
+
+def _factor(row: dict, key: str) -> float | None:
+    """Kennzahl für einen Score. Gewinnstabilität aus weniger als fünf Jahren zählt höchstens neutral (drei
+    Jahreswerte liegen leicht auf einer Geraden; ein Einbruch zeigt sich trotzdem). Die Ø-Kapitalrendite fällt auf
+    die jüngste zurück, solange sie fehlt."""
+    if key == "d_stab":
+        v = row.get("d_stab")
+        return min(v, SHORT_STABILITY_CAP) if v is not None and row.get("d_short") else v
+    if key == "d_roic_avg":
+        return row.get("d_roic_avg", row.get("d_roic"))
+    return row.get(key)
+
+
 def add_scores(rows: list[dict]) -> None:
     """Scores 0–100 je Aktie. Teil-Scores vergleichen innerhalb des Sektors (Banken mit Banken), damit z. B.
-    das niedrige KGV von Banken nicht automatisch als günstig gilt. 80 = besser als 80 % der Vergleichsaktien."""
+    das niedrige KGV von Banken nicht automatisch als günstig gilt. 80 = besser als 80 % der Vergleichsaktien.
+    Läuft zweimal: beim Aufbau der Weltauswahl und erneut, sobald die Werte der Tiefenanalyse angehängt sind
+    (erst dann gibt es die Beständigkeit)."""
+    for r in rows:
+        for k in SCORE_KEYS:
+            r.pop(k, None)
     for name, parts in FACTORS.items():
         eligible = [name != "score_dividend" or (r.get("div_yield") or 0) > 0 for r in rows]
-        ranks = [_sector_ranks(rows, [r[key] * direction if ok and r.get(key) is not None else None
+        ranks = [_sector_ranks(rows, [_factor(r, key) * direction if ok and _factor(r, key) is not None else None
                                       for r, ok in zip(rows, eligible)])
                  for key, direction in parts]
         need = (len(parts) + 1) // 2  # mindestens die Hälfte der Kennzahlen muss vorliegen
@@ -668,9 +700,13 @@ def _prepared() -> dict | None:
     alt = data.pop("alt_isins", {})
     # eigene Korrekturen zur Handelbarkeit kommen erst bei der Auslieferung dazu (je Anfrage, siehe payload)
     listing = lsx.current()
+    # Fonds auch aus einer Weltauswahl entfernen, die vor dem Namensfilter gebaut wurde
+    data["stocks"] = [r for r in data["stocks"] if not FUND_NAME.search(r.get("name") or "")]
+    data["count"] = len(data["stocks"])
     for r in data["stocks"]:
         deep.merge_into(r, deep_rows.get(r["symbol"]))
         _mark_tradable(r, alt.get(r["symbol"]), listing, {})
+    add_scores(data["stocks"])  # mit Gewinnstabilität und Ø-Kapitalrendite aus der Tiefenanalyse
     data["trade_republic"] = lsx.status()
     try:
         snapshots.save(data["stocks"])  # ein Tagesstand pro Tag (für die Auswertung der Scores)
@@ -693,6 +729,7 @@ def _prepared() -> dict | None:
     _payload.clear()
     _payload.update(key=key, raw=raw, gz=gzip.compress(raw, 6), countries=data["countries"],
                     by_symbol={r["symbol"]: r for r in data["stocks"]}, count=len(data["stocks"]),
+                    by_name={_plain(r["name"]): r["symbol"] for r in reversed(data["stocks"]) if r.get("name")},
                     alt=alt, format=data.get("format", 1),
                     # Reihenfolge der Tiefenanalyse: größte Firmen zuerst
                     universe=[{"symbol": r["symbol"], "isin": r.get("isin")} for r in data["stocks"]])
@@ -739,13 +776,41 @@ def stock(symbol: str) -> dict | None:
         return {**row, "country_name": country.get("name"), "continent": country.get("continent"), "universe": p["count"]}
 
 
-def trade_republic(symbol: str, isin: str | None) -> dict:
-    """Handelbarkeit einer beliebigen Aktie (Profil, Screener): die ISIN des Profils, dazu aus der Weltauswahl die
-    ISIN der Heimatnotierung und die weiterer Notierungen der Firma (ADRs …)."""
+def _plain(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def home_listing(symbol: str, name: str | None) -> dict | None:
+    """Heimatnotierung in der Weltauswahl für eine Notierung, die selbst nicht darin steht (ADR, Zweitnotierung):
+    dieselbe Firma laut Name. Novo Nordisk (NVO, New York) -> NOVO-B.CO."""
+    if not name:
+        return None
     with _lock:
         p = _prepared()
-        row = p["by_symbol"].get(symbol) if p else None
-        alt = p["alt"].get(symbol, []) if p else []
+        if not p or symbol in p["by_symbol"]:
+            return None
+        home = p["by_name"].get(_plain(name))
+        row = p["by_symbol"].get(home) if home else None
+    return {"symbol": row["symbol"], "name": row["name"]} if row else None
+
+
+def members(symbols: list[str]) -> set[str]:
+    """Welche der Ticker in der Weltauswahl stehen (Suchvorschläge: Heimatnotierung mit Scores zuerst)."""
+    with _lock:
+        p = _prepared()
+        rows = p["by_symbol"] if p else {}
+        return {s for s in symbols if s in rows}
+
+
+def trade_republic(symbol: str, isin: str | None, home: str | None = None) -> dict:
+    """Handelbarkeit einer beliebigen Aktie (Profil, Screener): die ISIN des Profils, dazu aus der Weltauswahl die
+    ISIN der Heimatnotierung und die weiterer Notierungen der Firma (ADRs …). `home`: Ticker der Heimatnotierung,
+    wenn `symbol` selbst nicht in der Weltauswahl steht."""
+    with _lock:
+        p = _prepared()
+        key = symbol if p and symbol in p["by_symbol"] else home
+        row = p["by_symbol"].get(key) if p and key else None
+        alt = p["alt"].get(key, []) if p and key else []
     isins = list(dict.fromkeys(i for i in [isin, row.get("isin") if row else None, *alt] if i))
     listing = lsx.current()
     info = trade_republic_info(symbol, isins, listing, userdata.tradable_overrides())

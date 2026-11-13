@@ -19,6 +19,8 @@ WITHHOLDING_FILE = BASE_DIR / "aktientool" / "quellensteuer.json"
 HOLDINGS_FILE = BASE_DIR / "aktientool" / "holdings.json"  # Holdings mit selbst gerechnetem inneren Wert
 SNAPSHOT_DIR = Path(os.environ.get("AKTIENTOOL_SNAPSHOT_DIR", DATA_DIR / "snapshots"))
 DEEP_KEY = "tiefenanalyse"
+MONTHLY_KEY = "monatskurse"  # Monatsschlusskurse aller Aktien der Weltauswahl (Rückblick im Score-Check)
+RUECKBLICK_KEY = "rueckblick"  # daraus berechnete Auswertung der Kursfaktoren
 
 HOST = os.environ.get("AKTIENTOOL_HOST", "127.0.0.1")
 PORT = int(os.environ.get("AKTIENTOOL_PORT", "5050"))

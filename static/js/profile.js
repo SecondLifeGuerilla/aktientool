@@ -216,6 +216,28 @@ function head(p) {
   </section>`;
 }
 
+// Erwartete Rendite als Spanne: vorsichtig gerechnet (niedrigere Wachstumsquelle, Bewertung holt nicht auf) bis Modell.
+// Farbe nach dem vorsichtigen Wert: Grün gibt es nur, wenn die Rendite auch ohne Bewertungsaufholung stimmt.
+function returnRange(model, low) {
+  if (!F.isNum(low) || Math.abs(model - low) < 0.005) return F.signedPct(model, 1);
+  const [a, b] = low < model ? [low, model] : [model, low];
+  return `${F.signedPct(a, 1)} bis ${F.signedPct(b, 1)}`;
+}
+function returnClass(model, low, uncertain) {
+  const r = F.isNum(low) ? Math.min(low, model) : model;
+  return uncertain ? "muted" : r >= 0.08 ? "good" : r < 0 ? "bad" : "";
+}
+
+// Warnzeichen für eine mögliche Value-Falle (analysis/trap.py): nur zeigen, wenn die Aktie günstig wirkt
+function trapNotice(p) {
+  const t = p.trap;
+  if (!t || !t.count || !t.cheap) return "";
+  const head = t.trap
+    ? `<b>Mögliche ${term("value_falle", "Value-Falle")}:</b> Die Aktie wirkt gemessen an ihrer Vergangenheit günstig, ${t.count} Warnzeichen sprechen aber dafür, dass sich diese Vergangenheit nicht fortsetzt.`
+    : `<b>Ein ${term("value_falle", "Warnzeichen")}:</b> Die Aktie wirkt günstig; prüfen Sie, ob der Grund dafür vorübergehend ist.`;
+  return `<div class="notice trap-notice">${head}<ul>${t.signs.map((s) => `<li class="warn">${esc(s.text)}</li>`).join("")}</ul></div>`;
+}
+
 // ---------------------------------------------------------------- Auf einen Blick: das Fazit direkt unter dem Kopf
 const RELIABILITY_STATUS = {
   "äußerst zuverlässig": "good", "zuverlässig": "good", "schwankend": "warning", "unzuverlässig": "serious",
@@ -233,8 +255,9 @@ function glance(p) {
   const earnSub = q.loss_making ? `Verlust in ${q.losses} von ${q.count} Geschäftsjahren`
     : [F.isNum(q.stability) ? `Stabilität ${F.stability(q.stability)}` : null,
       F.isNum(q.growth) ? `Gewinn ${F.signedPct(q.growth, 1)} pro Jahr` : null].filter(Boolean).join(" · ") || "zu wenige Geschäftsjahre";
+  const low = v.expected?.cautious?.by_period?.[v.default_period];
   const expText = F.isNum(exp)
-    ? `<br>erwartete Rendite <span class="${uncertain ? "" : exp >= 0.08 ? "good" : exp < 0 ? "bad" : ""}">${F.signedPct(exp, 1)} pro Jahr</span>` : "";
+    ? `<br>${term("erwartete_rendite", "erwartete Rendite")} <span class="${returnClass(exp, low, uncertain)}">${returnRange(exp, low)} pro Jahr</span>` : "";
   const valSub = per ? `Kurs ${F.signedPct(per.deviation, 0)} vs. ${term("fairer_wert", "fairer Wert")} ${F.money(per.fair_value, p.currency)}${expText}`
     : "kein fairer Wert berechenbar";
   const cards = [...p.scorecard].sort((a, b) => b.score - a.score);
@@ -301,7 +324,8 @@ function trustCard(p) {
 const WORLD_SCORES = [
   ["score_total", "Gesamt", "score_gesamt"], ["score_quality", "Qualität", "score_qualitaet"],
   ["score_value", "Bewertung", "score_bewertung"], ["score_growth", "Wachstum", "score_wachstum"],
-  ["score_momentum", "Momentum", "score_momentum", true], ["score_dividend", "Dividende", "score_dividende"],
+  ["score_momentum", "Momentum", "score_momentum", true], ["score_stability", "Beständigkeit", "score_bestaendigkeit"],
+  ["score_dividend", "Dividende", "score_dividende"],
   ["magic_formula", "Magic Formula", "magic_formula", true],
 ];
 
@@ -332,7 +356,13 @@ async function loadWorld(root, p, isCurrent) {
   const isin = root.querySelector("#fact-isin"); // nicht in der Basis-Ansicht
   if (w.isin && !p.facts.isin && isin) isin.textContent = w.isin;
   if (!w.symbol) {
-    card.innerHTML = `<h2 style="font-size:18px">Scores im Sektorvergleich</h2>
+    const home = p.home_listing;
+    card.innerHTML = home
+      ? `<h2 style="font-size:18px">Scores im Sektorvergleich</h2>
+        <p class="secondary">${esc(p.symbol)} ist eine Zweitnotierung. Scores, Checkliste und Vergleich mit der Branche gibt es bei der
+        Heimatnotierung in der <a href="#/welt">Weltauswahl</a>:</p>
+        <p><a class="btn primary" href="#/aktie/${encodeURIComponent(home.symbol)}">${esc(home.name)} (${esc(home.symbol)}) öffnen</a></p>`
+      : `<h2 style="font-size:18px">Scores im Sektorvergleich</h2>
       <p class="secondary">Diese Notierung ist nicht in der <a href="#/welt">Weltauswahl</a> enthalten (z. B. Börsenwert unter der Mindestgröße,
       eine Zweitnotierung oder die Weltauswahl ist noch nicht geladen). Scores gibt es nur dort.</p>`;
     return;
@@ -1196,6 +1226,7 @@ function fairValue(p) {
       <div class="segmented" id="period-seg" role="group" aria-label="Bewertungszeitraum">${buttons}</div>
     </div>`}
     <div class="grid tiles" id="fv-tiles"></div>
+    ${trapNotice(p)}
     <p id="fv-text" style="margin-top:14px;max-width:900px"></p>
     <div class="card">
       <div class="chart-title"><h3>Kurs und fairer Wert</h3><span class="muted">${unitNote(p, "day")}</span></div>
@@ -1240,7 +1271,11 @@ function dcfWire(root, p) {
     const compare = [F.isNum(hist) ? `bisher ${F.pct(hist, 1)} pro Jahr (Gewinn)` : null,
       F.isNum(analysts) ? `Analysten erwarten ${F.pct(analysts, 1)} pro Jahr` : null].filter(Boolean).join(", ");
     const ref = Math.max(...[hist, analysts].filter(F.isNum));
+    // Analysten erwarten viel weniger als bisher erreicht (Wachstumsbruch): Dann sagt der Vergleich mit dem höheren
+    // der beiden Werte nichts über „günstig“
+    const split = F.isNum(hist) && F.isNum(analysts) && (analysts < 0 || (hist >= 0.06 && analysts < hist / 2));
     const verdict = !F.isNum(g) || !Number.isFinite(ref) ? ""
+      : split && g < hist - 0.03 && g > analysts + 0.03 ? " Gemessen am bisherigen Wachstum ist das wenig, gemessen an der Analystenerwartung viel: Entscheidend ist, ob das frühere Wachstum zurückkommt."
       : g > ref + 0.03 ? " Der Kurs setzt also mehr Wachstum voraus, als bisher erreicht bzw. erwartet wird: viel Optimismus eingepreist."
         : g < ref - 0.03 ? " Der Kurs setzt weniger Wachstum voraus, als bisher erreicht bzw. erwartet wird: ein Hinweis auf eine günstige Bewertung."
           : " Das entspricht in etwa dem bisherigen bzw. erwarteten Wachstum.";
@@ -1264,8 +1299,23 @@ function expectedTile(v, period) {
   const parts = [e.sources.analysts != null ? `Analysten ${F.pct(e.sources.analysts, 1)}` : null,
     e.sources.history != null ? `Historie ${F.pct(e.sources.history, 1)}` : null].filter(Boolean).join(", ");
   const uncertain = v.dip_now || v.short_history;
-  return tile(term("erwartete_rendite", "Erwartete Rendite p. a."), `<span class="${uncertain ? "muted" : r >= 0.08 ? "good" : r < 0 ? "bad" : ""}">${F.signedPct(r, 1)}</span>`,
-    `${uncertain ? "unsicher · " : ""}Wachstum ${F.pct(e.growth, 1)} (${parts})${e.dividend_yield ? ` + Dividende ${F.pct(e.dividend_yield, 1)}` : ""}`);
+  const low = e.cautious?.by_period?.[period];
+  const range = F.isNum(low) && Math.abs(r - low) >= 0.005;
+  return tile(term("erwartete_rendite", "Erwartete Rendite p. a."), `<span class="${returnClass(r, low, uncertain)}">${returnRange(r, low)}</span>`,
+    `${uncertain ? "unsicher · " : ""}${range ? `${term("rendite_vorsichtig", "vorsichtig")} bis Modell · ` : ""}Wachstum ${F.pct(e.growth, 1)} (${parts})${e.dividend_yield ? ` + Dividende ${F.pct(e.dividend_yield, 1)}` : ""}`);
+}
+
+// Satz zur vorsichtigen Variante der erwarteten Rendite
+function cautiousText(v, period) {
+  const c = v.expected?.cautious;
+  const low = c?.by_period?.[period];
+  const model = v.expected?.by_period?.[period];
+  if (!F.isNum(low) || !F.isNum(model) || Math.abs(model - low) < 0.005) return "";
+  const s = v.expected.sources;
+  const which = s.analysts != null && s.history != null ? (s.analysts <= s.history ? "der Analystenerwartung" : "dem bisherigen Wachstum") : "derselben Annahme";
+  return ` ${term("rendite_vorsichtig", "Vorsichtig gerechnet")} sind es ${F.signedPct(low, 1)} pro Jahr: Wachstum nur nach ${which}
+    (${F.pct(c.growth, 1)} pro Jahr), und das ${v.multiple_label} bleibt, wo es heute steht${v.periods[period].deviation > 0 ? " bzw. fällt auf seinen Durchschnitt" : ""}.
+    Je weiter beide Werte auseinanderliegen, desto mehr hängt die Rendite davon ab, dass die Aktie wieder so bewertet wird wie früher.`;
 }
 
 function fairValueSection(root, p, state, onPeriod) {
@@ -1301,7 +1351,7 @@ function fairValueSection(root, p, state, onPeriod) {
       ${per.deviation >= 0 ? "über" : "unter"} diesem fairen Wert, was ${RATING_NOUN[per.rating.label]} entspricht.${dipNow}
       ${F.isNum(v.expected?.by_period?.[state.period]) ? `Wächst die Kennzahl ${v.expected.years} Jahre lang um ${F.pct(v.expected.growth, 1)} pro Jahr und
         kehrt das ${v.multiple_label} zu seinem Durchschnitt zurück, ergibt sich einschließlich Dividende eine
-        ${term("erwartete_rendite", "erwartete Rendite")} von ${F.signedPct(v.expected.by_period[state.period], 1)} pro Jahr.` : ""}`;
+        ${term("erwartete_rendite", "erwartete Rendite")} von ${F.signedPct(v.expected.by_period[state.period], 1)} pro Jahr.${cautiousText(v, state.period)}` : ""}`;
     const parts = [];
     const lastFc = v.forecasts[v.forecasts.length - 1];
     if (lastFc && F.isNum(lastFc.low) && F.isNum(lastFc.high)) {
@@ -1503,9 +1553,12 @@ function dividendCharts(root, p) {
 // ---------------------------------------------------------------- Jahreswerte
 function annual(p) {
   const ccy = p.currency;
+  // Umsatz wie im Abschnitt „Geschäft“: aus der Bilanzwährung zum heutigen Kurs (sonst stünden bei Firmen mit
+  // fremder Bilanzwährung zwei verschiedene Jahresumsätze auf derselben Seite)
+  const revenue = (r) => (p.eur && F.isNum(r.fin_revenue) ? r.fin_revenue : r.revenue);
   const rows = [...p.annual].reverse().map((r) => `<tr>
       <td>${F.date(r.end)}</td><td>${F.money(r.eps, "")}</td><td>${F.money(r.eps_adj, "")}</td>
-      <td>${F.money(r.ocf_ps, "")}</td><td>${F.money(r.fcf_ps, "")}</td><td>${F.big(r.revenue, "")}</td>
+      <td>${F.money(r.ocf_ps, "")}</td><td>${F.money(r.fcf_ps, "")}</td><td>${F.big(revenue(r), "")}</td>
       <td class="muted" style="text-align:left">${esc(r.source)}</td></tr>`).join("");
   const t = p.ttm;
   return `

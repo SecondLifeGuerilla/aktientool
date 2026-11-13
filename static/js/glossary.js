@@ -308,8 +308,33 @@ export const TERMS = {
   // ---- Scores
   score_gesamt: {
     group: "Scores", term: "Gesamt-Score", wiki: "Value Investing",
-    short: "0–100: Mittel aus Qualitäts-, Bewertungs-, Wachstums- und Momentum-Score. Hoch = profitable, vernünftig bewertete, wachsende Firma mit intaktem Kurstrend.",
-    long: "Jeder Teil-Score vergleicht die Aktie mit allen Aktien desselben Sektors der Weltauswahl. Der Gesamt-Score ist ein Startpunkt für die eigene Recherche, keine Kaufempfehlung: Er kennt weder die Zukunftsaussichten noch Sondereffekte in den Zahlen.",
+    short: "0–100: Mittel aus Qualitäts-, Bewertungs-, Wachstums-, Momentum- und Beständigkeits-Score. Hoch = profitable, vernünftig bewertete, wachsende Firma mit intaktem Kurstrend und verlässlichen Gewinnen.",
+    long: "Jeder Teil-Score vergleicht die Aktie mit allen Aktien desselben Sektors der Weltauswahl. Die Beständigkeit bremst Firmen, die nur auf dem Hoch eines Zyklus glänzen. Der Gesamt-Score ist ein Startpunkt für die eigene Recherche, keine Kaufempfehlung: Er kennt weder die Zukunftsaussichten noch Sondereffekte in den Zahlen.",
+  },
+  score_bestaendigkeit: {
+    group: "Scores", term: "Beständigkeits-Score", wiki: "Bestimmtheitsmaß",
+    short: "0–100: Rang bei Gewinnstabilität über viele Jahre und durchschnittlicher Kapitalrendite (ROIC, bis 4 Jahre) im eigenen Sektor.",
+    long: "Ölkonzerne, Chiphersteller oder Reedereien haben auf dem Hoch ihres Zyklus zugleich hohe Margen, ein niedriges KGV, starkes Wachstum und einen steigenden Kurs. Die Beständigkeit fragt, ob das über Jahre so war. Gewinnstabilität aus weniger als fünf Jahren Bilanzdaten zählt höchstens neutral; fehlt die Tiefenanalyse noch, bleibt der Score leer und der Gesamt-Score nutzt die übrigen vier.",
+  },
+  kauf_checkliste: {
+    group: "Scores", term: "Kauf-Checkliste",
+    short: "Die Prüfungen aus dem Tutorial in einer Zahl: so viele Punkte zu Datenbasis, Qualität, Preis, Rückenwind und Ihrer Strategie erfüllt die Aktie.",
+    long: "Geprüft werden unter anderem: mindestens 5 Jahre Bilanzdaten, Gewinnstabilität ab 0,75, Gewinnwachstum ab 6 % pro Jahr, Kapitalrendite ab 8 %, Kurs höchstens 10 % über dem fairen Wert, erwartete Rendite ab 8 %, keine Warnung vor einer Value-Falle, Scorecard Ihrer Strategie ab 7. „9/11“ heißt: 9 von 11 prüfbaren Punkten erfüllt. Punkte ohne Daten zählen nicht mit; die nicht erfüllten zeigt der Tooltip in der Tabelle, die ganze Liste das Profil unter „Kauf-Checkliste für diese Aktie“. Die Strategie wählen Sie in der Weltauswahl neben den Vorlagen oder im Tutorial.",
+  },
+  rendite_vorsichtig: {
+    group: "Bewertung", term: "Erwartete Rendite, vorsichtig gerechnet",
+    short: "Wie die erwartete Rendite, aber mit der niedrigeren Wachstumsannahme (Analysten oder Historie) und ohne dass die Aktie wieder so hoch bewertet wird wie früher.",
+    long: "Das Modell rechnet damit, dass das KGV (bzw. KCV) zu seinem Durchschnitt zurückkehrt und der Gewinn mit dem Mittel aus Analystenerwartung und Historie wächst. Beides kann ausbleiben, gerade bei Aktien, die stark gefallen sind. Die vorsichtige Variante lässt das Multiple, wo es heute steht (liegt es über dem Durchschnitt, fällt es dorthin zurück), und nimmt die niedrigere der beiden Wachstumsquellen. Übrig bleiben Wachstum plus Dividende. Liegen beide Werte weit auseinander, hängt die Rendite an der Bewertungsaufholung.",
+  },
+  value_falle: {
+    group: "Bewertung", term: "Value-Falle und Warnzeichen", wiki: "Value Investing",
+    short: "Eine Aktie, die gemessen an ihrer Vergangenheit billig aussieht, es aber zu Recht ist, weil das Wachstum abbricht.",
+    long: "Der faire Wert schreibt die Vergangenheit fort. Drei Warnzeichen prüfen, ob das noch trägt: (1) Analysten erwarten sinkende Gewinne oder weniger als die Hälfte des bisherigen Wachstums, (2) die Gewinnschätzungen wurden in 90 Tagen um mindestens 3 % gesenkt, (3) der Kurs liegt unter der 200-Tage-Linie und das Momentum 12-1 ist negativ. Liegt der Kurs mindestens 10 % unter dem fairen Wert und treffen zwei Warnzeichen zu, markiert das Tool die Aktie als mögliche Value-Falle. Das ist kein Urteil, sondern die Aufforderung, den Grund für den niedrigen Kurs zu verstehen.",
+  },
+  datenjahre: {
+    group: "Allgemein", term: "Datenjahre",
+    short: "So viele Jahre reicht die Gewinnreihe zurück, aus der Stabilität, Wachstum und fairer Wert berechnet sind. Dahinter die Quelle: SEC (US-Pflichtberichte), ESEF (europäische Jahresberichte) oder Yahoo.",
+    long: "Yahoo liefert kostenlos nur drei bis vier Jahre. Für US-Firmen und ausländische Firmen mit US-Listing kommen die Pflichtberichte der SEC dazu (oft 15 Jahre), für viele europäische Firmen die ESEF-Berichte ab 2020. Unter fünf Jahren gelten Gewinnstabilität und -wachstum als nicht belastbar: Filter „mindestens …“ erfüllen solche Aktien nicht, die Scorecard zählt sie höchstens neutral, und einen fairen Wert mit Einordnung gibt es nicht.",
   },
   score_qualitaet: {
     group: "Scores", term: "Qualitäts-Score", wiki: "Rentabilität",

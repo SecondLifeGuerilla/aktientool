@@ -293,6 +293,33 @@ def expected_returns(periods: dict, current: float, price: float, growth: float 
     return out
 
 
+def cautious_growth(sources: dict) -> float | None:
+    """Vorsichtige Wachstumsannahme: die niedrigere aus Analystenerwartung und eigener Historie, gekappt wie das
+    Modellwachstum. Liegt nur eine der beiden vor, gilt sie."""
+    if not sources:
+        return None
+    return min(GROWTH_RANGE[1], max(GROWTH_RANGE[0], min(sources.values())))
+
+
+def cautious_return(fair_value: float | None, price: float | None, growth: float | None, div_yield: float | None) -> float | None:
+    """Rendite pro Jahr ohne Bewertungsaufholung: Das Multiple bleibt, wo es heute steht (liegt es über dem
+    Durchschnitt, fällt es dorthin zurück). Was bleibt, sind Wachstum und Dividende.
+    `fair_value` = Ø-Multiple × aktuelle Kennzahl; die Tiefenanalyse rechnet damit zum aktuellen Kurs neu."""
+    if growth is None or not price or price <= 0 or not fair_value or fair_value <= 0:
+        return None
+    rerating = min(1.0, fair_value / price)
+    return rerating ** (1 / EXPECTED_YEARS) * (1 + growth) - 1 + (div_yield or 0)
+
+
+def cautious_returns(periods: dict, price: float, growth: float | None, div_yield: float) -> dict:
+    out = {}
+    for key, per in periods.items():
+        r = cautious_return(per["fair_value"], price, growth, div_yield) if per else None
+        if r is not None:
+            out[key] = r
+    return out
+
+
 def build(close: pd.Series, price: float, annual: list[dict], ttm: dict, estimates: dict,
           div_yield: float = 0.0) -> dict:
     today = close.index[-1]
@@ -381,6 +408,7 @@ def build(close: pd.Series, price: float, annual: list[dict], ttm: dict, estimat
     if forecasts and forecasts[-1].get("low") and forecasts[-1].get("high") and forecasts[-1]["avg"]:
         spread = (forecasts[-1]["high"] - forecasts[-1]["low"]) / forecasts[-1]["avg"]
     growth = expected_growth(best, estimates, short_history)
+    low_growth = cautious_growth(growth["sources"])
 
     return {
         "available": True,
@@ -389,7 +417,10 @@ def build(close: pd.Series, price: float, annual: list[dict], ttm: dict, estimat
         "basis_note": basis_note,
         "expected": {"growth": growth["growth"], "sources": growth["sources"], "years": EXPECTED_YEARS,
                      "dividend_yield": div_yield or 0.0,
-                     "by_period": expected_returns(periods, best["current"], price, growth["growth"], div_yield)},
+                     "by_period": expected_returns(periods, best["current"], price, growth["growth"], div_yield),
+                     # vorsichtige Variante: niedrigere Wachstumsquelle, keine Rückkehr zu einem höheren Multiple
+                     "cautious": {"growth": low_growth,
+                                  "by_period": cautious_returns(periods, price, low_growth, div_yield)}},
         "stabilities": stabilities,
         "current_value": best["current"], "current_multiple": price / best["current"],
         # Kennzahl gerade selbst eingebrochen: der faire Wert (Ø-Multiple × aktuelle Kennzahl) fällt dann zu niedrig aus

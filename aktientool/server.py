@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from . import alerts, config, deep, derivate, eur, outlook, remote, service, snapshots, trusts, userdata, world
+from . import alerts, config, deep, derivate, eur, outlook, remote, rueckblick, service, snapshots, trusts, userdata, world
 from .analysis import metrics
 from .cache import cached
 from .sources import fx, news, onvista, tradegate, wiki, yahoo, yahoo_screener
@@ -131,10 +131,15 @@ def api_search():
     if len(q) < 1:
         return jsonify([])
     results = yahoo.search(q)
-    flags = world.tradable_flags([r["symbol"] for r in results])  # nur für Ticker aus der Weltauswahl bekannt
+    symbols = [r["symbol"] for r in results]
+    flags = world.tradable_flags(symbols)  # nur für Ticker aus der Weltauswahl bekannt
     for r in results:
         if r["symbol"] in flags:
             r["tr"] = flags[r["symbol"]]
+    # Notierungen aus der Weltauswahl zuerst: Nur dort gibt es Scores, und Yahoo stellt oft das US-Zertifikat
+    # (NVO, SAP, TM) vor die Heimatbörse. Die Reihenfolge innerhalb beider Gruppen bleibt die von Yahoo.
+    known = world.members(symbols)
+    results.sort(key=lambda r: r["symbol"] not in known)
     return jsonify(results)
 
 
@@ -143,7 +148,10 @@ def api_profile(symbol: str):
     # Anzeige in Euro (siehe eur.py); intern rechnet alles weiter in der Kurswährung
     sym = _symbol(symbol)
     prof = eur.profile(service.build_profile(sym, refresh=request.args.get("refresh") == "1"))
-    prof["trade_republic"] = world.trade_republic(sym, prof["facts"].get("isin"))
+    # Zweitnotierung (ADR …): auf die Heimatnotierung in der Weltauswahl verweisen, dort gibt es die Scores
+    home = world.home_listing(sym, prof.get("name"))
+    prof["home_listing"] = home
+    prof["trade_republic"] = world.trade_republic(sym, prof["facts"].get("isin"), home["symbol"] if home else None)
     isin = prof["trade_republic"].get("isin") or prof["facts"].get("isin")
     prof["live"] = _live(isin, prof["facts"].get("price") if prof.get("currency") == "EUR" else None)
     try:  # Trust oder Holding: Abschlag zum inneren Wert (das Profil soll daran nie scheitern)
@@ -518,6 +526,12 @@ def api_snapshots_eval():
         raise ApiError("Für dieses Datum gibt es keinen Tagesstand.", 404)
     except ValueError as e:
         raise ApiError(str(e))
+
+
+@app.get("/api/rueckblick")
+def api_rueckblick():
+    """Rückblick des Score-Checks: Kursfaktoren über die letzten Jahre (aus den Monatskursen der Tiefenanalyse)."""
+    return jsonify(rueckblick.result())
 
 
 def _port_free(host: str, port: int) -> bool:

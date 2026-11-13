@@ -30,6 +30,8 @@ const ROWS = [
   ["Multiple aktuell", "kgv", (p) => p.valuation.current_multiple, (v, p) => (F.isNum(v) ? `${F.num(v, 1)} <span class="muted">${esc(p.valuation.multiple_label)}</span>` : "–"), 0],
   ["Kurs vs. fairer Wert", "fairer_wert", (p) => (unrated(p) ? null : per(p)?.deviation), (v, p) => (per(p) ? `${F.signedPct(per(p).deviation, 0)}${unrated(p) ? ' <span class="muted">(unsicher)</span>' : ""}` : "–"), -1],
   ["Erwartete Rendite p. a.", "erwartete_rendite", (p) => (unrated(p) ? null : p.valuation.expected?.by_period?.[p.valuation.default_period]), (v) => F.signedPct(v, 1), 1],
+  ["Rendite vorsichtig gerechnet", "rendite_vorsichtig", (p) => (unrated(p) ? null : p.valuation.expected?.cautious?.by_period?.[p.valuation.default_period]), (v) => F.signedPct(v, 1), 1],
+  ["Warnzeichen (Value-Falle)", "value_falle", (p) => p.trap?.count, (v, p) => (F.isNum(v) ? `${v}${p.trap.trap ? ' <span class="badge serious">Value-Falle?</span>' : ""}` : "–"), -1],
   ["Eingepreistes FCF-Wachstum", "reverse_dcf", (p) => p.dcf?.rates?.["0.09"], (v) => F.signedPct(v, 1), -1],
   ["Free-Cashflow-Rendite", "fcf_rendite", (p) => p.fundamentals?.fcf_yield, (v) => F.pct(v, 1), 1],
   ["Dividende"],

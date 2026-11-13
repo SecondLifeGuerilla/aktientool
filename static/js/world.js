@@ -2,6 +2,7 @@
 import { api, getWatchlist, toggleWatch } from "./api.js";
 import { takeRowToShow, trackBrowse } from "./browse.js";
 import { NOT_TR_TAG, setTrOnly, trOnly } from "./broker.js";
+import { rowScore, setStrategy, STRATEGY_LABELS, strategyKey } from "./checklist.js";
 import { csvNum, downloadCsv, today } from "./csv.js";
 import * as F from "./format.js";
 import { term } from "./glossary.js";
@@ -36,6 +37,15 @@ const scoreFmt = (v) => (F.isNum(v)
   ? `<span class="score-cell"><span class="score-bar" style="--w:${v}%"></span><b>${F.int(v)}</b></span>` : "–");
 const chipFmt = (v) => (F.isNum(v) ? `<span class="chip ${v >= 8 ? "hi" : v >= 6 ? "mid" : ""}">${v}</span>` : "–");
 const DEEP = "Tiefenanalyse";
+// Kauf-Checkliste: erfüllte von prüfbaren Punkten (checklist.js), in der Tabelle mit den nicht erfüllten als Tooltip
+const checkFmt = (v, r) => {
+  if (!F.isNum(v)) return "–";
+  const share = r.c_n ? v / r.c_n : 0;
+  const miss = r.c_miss?.length ? `Nicht erfüllt: ${r.c_miss.join(" · ")}` : "Alle prüfbaren Punkte erfüllt";
+  const open = r.c_all > r.c_n ? ` (${r.c_all - r.c_n} mangels Daten nicht prüfbar)` : "";
+  return `<span class="chip ${share >= 0.8 ? "hi" : share >= 0.6 ? "mid" : ""}" title="${esc(miss + open)}">${v}/${r.c_n}</span>`;
+};
+const WARN_LABEL = ["keine", "1 Warnzeichen", "2 Warnzeichen", "3 Warnzeichen"];
 
 // dir: Standard-Sortierung (-1 = große Werte zuerst); pct: Eingabe in Prozent; scale: Eingabe in Mrd.;
 // signed: Vorzeichen einfärben; term: Eintrag im Lexikon (Tooltip)
@@ -46,7 +56,9 @@ const METRICS = {
   score_growth: { label: "Wachstum", long: "Wachstums-Score", group: "Scores", fmt: scoreFmt, dir: -1, unit: "Punkte", term: "score_wachstum" },
   score_dividend: { label: "Dividende", long: "Dividenden-Score", group: "Scores", fmt: scoreFmt, dir: -1, unit: "Punkte", term: "score_dividende" },
   score_momentum: { label: "Momentum", long: "Momentum-Score", group: "Scores", fmt: scoreFmt, dir: -1, unit: "Punkte", term: "score_momentum" },
+  score_stability: { label: "Beständigkeit", long: "Beständigkeits-Score", group: "Scores", fmt: scoreFmt, dir: -1, unit: "Punkte", term: "score_bestaendigkeit" },
   magic_formula: { label: "Magic Formula", long: "Magic Formula (Greenblatt)", group: "Scores", fmt: scoreFmt, dir: -1, unit: "Punkte", term: "magic_formula" },
+  c_ok: { label: "Checkliste", long: "Kauf-Checkliste: erfüllte Punkte", group: "Kauf-Checkliste", fmt: checkFmt, dir: -1, unit: "Punkte", term: "kauf_checkliste" },
   market_cap: { label: "Börsenwert", group: "Größe", fmt: (v) => F.big(v, "€"), dir: -1, unit: "Mrd. €", scale: 1e9, term: "boersenwert" },
   revenue: { label: "Umsatz", long: "Umsatz (12 Monate)", group: "Größe", fmt: (v) => F.big(v, "€"), dir: -1, unit: "Mrd. €", scale: 1e9 },
   pe: { label: "KGV", long: "KGV (12 Monate)", group: "Bewertung", fmt: num(1), dir: 1, term: "kgv" },
@@ -87,6 +99,12 @@ const METRICS = {
     fmt: (v, r) => (F.isNum(v) ? `<span class="badge ${v > 0.3 ? "critical" : v > 0.1 ? "serious" : v >= -0.1 ? "neutral" : "good"}">${F.signedPct(v, 0)}</span>`
       : r?.d_rating ? `<span class="muted" title="${esc(r.d_rating)}">unsicher</span>` : "–") },
   d_exp: { label: "Erw. Rendite", long: "Erwartete Rendite p. a. (5 Jahre)", group: DEEP, fmt: signed(1), dir: -1, pct: true, signed: true, term: "erwartete_rendite" },
+  d_exp_lo: { label: "Rendite vorsichtig", long: "Erwartete Rendite p. a., vorsichtig gerechnet", group: DEEP, fmt: signed(1), dir: -1, pct: true, signed: true, term: "rendite_vorsichtig" },
+  d_warn: { label: "Warnzeichen", long: "Warnzeichen (0–3) für eine Value-Falle", group: DEEP, dir: 1, unit: "0–3", term: "value_falle",
+    fmt: (v, r) => (!F.isNum(v) ? "–" : r?.d_trap ? '<span class="badge serious" title="Wirkt günstig, hat aber mindestens zwei Warnzeichen">Value-Falle?</span>'
+      : `<span class="${v >= 2 ? "bad" : v === 1 ? "" : "muted"}">${WARN_LABEL[v] || v}</span>`) },
+  d_years: { label: "Datenjahre", long: "Jahre mit Bilanzdaten (Gewinnreihe)", group: DEEP, dir: -1, unit: "Jahre", term: "datenjahre",
+    fmt: (v, r) => (F.isNum(v) ? `${F.num(v, 0)} J.${r?.d_src ? ` <span class="muted">${esc(r.d_src)}</span>` : ""}` : "–") },
   d_sc_eg: { label: "Score Gewinnw.", long: "Scorecard Gewinnwachstum (1–10)", group: DEEP, fmt: chipFmt, dir: -1, unit: "1–10", term: "scorecard" },
   d_sc_dg: { label: "Score Div.-W.", long: "Scorecard Dividendenwachstum (1–10)", group: DEEP, fmt: chipFmt, dir: -1, unit: "1–10", term: "scorecard" },
   d_sc_inc: { label: "Score Div.-Ertrag", long: "Scorecard Dividendenertrag (1–10)", group: DEEP, fmt: chipFmt, dir: -1, unit: "1–10", term: "scorecard" },
@@ -97,6 +115,7 @@ const METRICS = {
   d_debt: { label: "Tilgungsj.", long: "Tilgungsjahre (Nettoschulden ÷ Free Cashflow)", group: DEEP, dir: 1, unit: "Jahre", term: "tilgungsjahre",
     fmt: (v) => (F.isNum(v) ? (v >= 99 ? "∞" : F.num(v, 1)) : "–") },
   d_roic: { label: "ROIC", long: "Kapitalrendite (ROIC)", group: DEEP, fmt: pct(1), dir: -1, pct: true, signed: true, term: "roic" },
+  d_roic_avg: { label: "ROIC Ø", long: "Kapitalrendite (ROIC), Durchschnitt bis 4 Jahre", group: DEEP, fmt: pct(1), dir: -1, pct: true, signed: true, term: "roic" },
   d_pio: { label: "Piotroski", long: "Piotroski F-Score (0–9)", group: DEEP, dir: -1, unit: "0–9", term: "piotroski", fmt: (v) => (F.isNum(v) ? `${v} / 9` : "–") },
   d_shares: { label: "Aktienzahl p. a.", long: "Veränderung der Aktienzahl p. a. (negativ = Rückkäufe)", group: DEEP, fmt: signed(1), dir: 1, pct: true, term: "aktienrueckkauf" },
   d_rev90: { label: "Revision 90 T.", long: "Änderung der Gewinnschätzung in 90 Tagen", group: DEEP, fmt: signed(1), dir: -1, pct: true, signed: true, term: "revisionen" },
@@ -109,12 +128,13 @@ const TEXT_TERMS = { industry: "branche" };
 
 const VIEWS = [
   ["overview", "Überblick", ["market_cap", "score_total", "pe", "div_yield", "revenue_growth", "net_margin", "perf_1y"]],
-  ["scores", "Scores", ["score_total", "score_quality", "score_value", "score_growth", "score_momentum", "score_dividend", "magic_formula"]],
+  ["check", "Kauf-Checkliste", ["c_ok", "d_stab", "d_growth", "d_roic", "d_dev", "d_exp_lo", "d_warn"]],
+  ["scores", "Scores", ["score_total", "score_quality", "score_value", "score_growth", "score_momentum", "score_stability", "score_dividend", "magic_formula"]],
   ["valuation", "Bewertung", ["market_cap", "pe", "forward_pe", "pb", "ps", "ev_ebitda", "peg"]],
   ["profit", "Rentabilität", ["revenue", "gross_margin", "ebitda_margin", "net_margin", "roe", "roa"]],
   ["growth", "Wachstum", ["revenue_growth", "eps_growth", "eps_growth_next", "pe", "peg"]],
   ["dividend", "Dividende", ["div_yield", "d_net_yield", "d_streak", "d_div_growth", "payout", "pe"]],
-  ["deep", "Qualität & fairer Wert", ["d_stab", "d_growth", "d_dev", "d_exp", "d_sc_eg", "d_sc_dg", "d_sc_inc"]],
+  ["deep", "Qualität & fairer Wert", ["d_years", "d_stab", "d_growth", "d_dev", "d_exp", "d_exp_lo", "d_warn", "d_sc_eg", "d_sc_dg", "d_sc_inc"]],
   ["signals", "Signale", ["d_roic", "d_pio", "d_shares", "d_rev90", "d_mom121", "d_dcf", "d_fcfy"]],
   ["balance", "Bilanz & Risiko", ["debt_equity", "net_debt_ebitda", "altman_z", "beta", "market_cap"]],
   ["price", "Kurs & Analysten", ["perf_1y", "momentum", "from_high", "rating", "forward_pe"]],
@@ -122,21 +142,26 @@ const VIEWS = [
 
 // Basis-Ansicht: nur die wichtigsten Kennzahlen, Ansichten und Vorlagen. Filter, Sortierung oder Auswahl aus der
 // Profi-Ansicht bleiben sichtbar, damit nichts unbemerkt filtert.
-const BASIC_METRICS = new Set(["score_total", "market_cap", "pe", "div_yield", "payout", "d_stab", "d_growth", "d_dev", "d_exp",
-  "d_net_yield", "d_streak", "d_div_growth"]);
+const BASIC_METRICS = new Set(["score_total", "c_ok", "market_cap", "pe", "div_yield", "payout", "d_stab", "d_growth", "d_dev", "d_exp",
+  "d_exp_lo", "d_warn", "d_net_yield", "d_streak", "d_div_growth"]);
 const BASIC_VIEWS = [
-  ["overview", "Überblick", ["score_total", "pe", "div_yield", "d_stab", "d_growth", "d_dev", "d_exp"]],
+  ["overview", "Überblick", ["score_total", "c_ok", "pe", "div_yield", "d_stab", "d_dev", "d_exp_lo"]],
+  ["check", "Kauf-Checkliste", ["c_ok", "d_stab", "d_growth", "d_dev", "d_exp_lo", "d_warn"]],
   ["dividend", "Dividende", ["div_yield", "d_net_yield", "d_streak", "d_div_growth", "payout", "d_dev"]],
 ];
-const BASIC_PRESETS = new Set(["Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten", "Attraktivste (Gesamt-Score)"]);
+const BASIC_PRESETS = new Set(["Kauf-Checkliste", "Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten", "Attraktivste (Gesamt-Score)"]);
 const views = () => (isBasic() ? BASIC_VIEWS : VIEWS);
 // gewählte Ansicht; gibt es sie in der Basis-Ansicht nicht (z. B. „Qualität & fairer Wert“ aus einer Vorlage), der Überblick
 const viewOf = (key) => views().find(([k]) => k === key) || views()[0];
 
 // auch vom Tutorial genutzt (Links auf eine Vorlage)
 export const PRESETS = [
-  ["Stabil & unterbewertet", { rules: [["d_stab", "min", "0,9"], ["d_dev", "max", "-10"]], sort: "d_dev", view: "deep" }],
-  ["Hohe erwartete Rendite", { rules: [["d_exp", "min", "12"], ["d_stab", "min", "0,7"]], sort: "d_exp", view: "deep" }],
+  // die Prüfungen aus dem Tutorial auf einen Blick: mindestens 9 Punkte für die gewählte Strategie erfüllt
+  ["Kauf-Checkliste", { rules: [["c_ok", "min", "9"]], sort: "c_ok", view: "check" }],
+  // ohne Aktien, die nur wegen eines Wachstumsbruchs billig aussehen
+  ["Stabil & unterbewertet", { rules: [["d_stab", "min", "0,9"], ["d_dev", "max", "-10"], ["d_warn", "max", "1"]], sort: "d_dev", view: "deep" }],
+  // vorsichtig gerechnet: niedrigere Wachstumsquelle, keine Rückkehr zu einem höheren Multiple
+  ["Hohe erwartete Rendite", { rules: [["d_exp_lo", "min", "8"], ["d_stab", "min", "0,7"]], sort: "d_exp_lo", view: "deep" }],
   ["Dividenden-Aristokraten", { rules: [["d_streak", "min", "25"]], sort: "d_streak", view: "dividend" }],
   ["Dividendenwachstum", { rules: [["d_sc_dg", "min", "8"]], sort: "d_sc_dg", view: "deep" }],
   ["Bilanzstark", { rules: [["d_pio", "min", "8"], ["d_roic", "min", "15"]], sort: "d_roic", view: "signals" }],
@@ -393,6 +418,9 @@ export async function renderWorld(root, params, isCurrent) {
           <span class="preset-row small">${PRESETS.map(([name], i) => (basic && !BASIC_PRESETS.has(name) ? ""
             : `<button type="button" class="btn small" data-preset="${i}">${esc(name)}</button>`)).join("")}
             <button class="btn small add-rule" id="w-add" type="button">+ Kennzahl-Filter</button></span>
+          <label class="check strategy-pick" for="w-strategy" title="Die Kauf-Checkliste prüft je nach Strategie andere Punkte (Tutorial, Lektion 1)">
+            ${term("kauf_checkliste", "Checkliste")} für Strategie
+            <select id="w-strategy" class="plain">${Object.entries(STRATEGY_LABELS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
         </div>
         <div id="w-rules" class="rules"></div>
         <div class="rules-head" id="w-saved-head">
@@ -413,6 +441,7 @@ export async function renderWorld(root, params, isCurrent) {
       <button class="btn small" id="w-csv" type="button" title="Alle Treffer mit allen Kennzahlen als CSV-Datei (für Excel, Numbers, Google Sheets)">CSV</button>
       <button class="btn primary adv" id="w-analyze" type="button"></button>
     </div>
+    <p class="muted coverage-note" id="w-note" hidden></p>
     <div class="card table-scroll" style="padding:8px 8px 4px">
       <table class="data screener world">
         <thead><tr id="w-head"></tr></thead>
@@ -422,10 +451,22 @@ export async function renderWorld(root, params, isCurrent) {
     </div>
     <div class="select-bar" id="w-select" hidden></div>`;
 
+  // ---- Kauf-Checkliste je Zeile für die gewählte Strategie (erfüllte, prüfbare, alle Punkte)
+  function applyChecklist() {
+    const key = strategyKey();
+    for (const r of rows) {
+      const c = rowScore(r, key);
+      if (c) { r.c_ok = c.passed; r.c_n = c.checked; r.c_all = c.total; r.c_miss = c.misses; }
+      else { delete r.c_ok; delete r.c_n; delete r.c_all; delete r.c_miss; }
+    }
+    $("#w-strategy").value = key;
+  }
+
   // ---- Daten vorbereiten (auch nach einer Aktualisierung im Hintergrund)
   function setData(d) {
     data = d;
     rows = d.stocks;
+    applyChecklist();
     for (const r of rows) {
       const c = d.countries[r.country] || {};
       r._country = c.name || r.country;
@@ -503,11 +544,41 @@ export async function renderWorld(root, params, isCurrent) {
       if (skip !== "theme" && S.themes.size && !r._themes.some((t) => S.themes.has(t))) return false;
       if (minCap && !(r.market_cap >= minCap)) return false;
       for (const rule of rules) {
-        const v = r[rule.key];
+        const v = ruleValue(r, rule);
         if (v == null || (rule.op === "min" ? v < rule.v : v > rule.v)) return false;
       }
       return true;
     };
+  }
+
+  // Wert, gegen den eine Bedingung prüft. Gewinnstabilität und -wachstum aus weniger als fünf Jahren sind nicht
+  // belastbar (drei Jahreswerte liegen leicht auf einer Geraden): „mindestens x“ erfüllen solche Aktien nicht.
+  function ruleValue(r, rule) {
+    if (r.d_short && rule.op === "min" && (rule.key === "d_stab" || rule.key === "d_growth")) return null;
+    return r[rule.key];
+  }
+
+  // Hinweis, wenn eine gefilterte Kennzahl nur für einen kleinen Teil der Aktien vorliegt (sonst wirkt eine kurze
+  // Trefferliste wie ein strenger Filter, obwohl schlicht die Daten fehlen)
+  function coverageNote() {
+    const trFilter = S.tr && trReady;
+    const base = trFilter ? rows.filter((r) => r.tr) : rows;
+    const notes = [];
+    for (const rule of compiledRules()) {
+      const have = base.reduce((n, r) => n + (ruleValue(r, rule) != null ? 1 : 0), 0);
+      if (!base.length || have / base.length >= 0.5) continue;
+      const m = METRICS[rule.key];
+      const name = (m.long || m.label).replace(/\s*\(.*\)$/, "");
+      const why = rule.key === "d_stab" || rule.key === "d_growth" ? "mit mindestens 5 Jahren Bilanzdaten"
+        : rule.key === "c_ok" ? "von der Tiefenanalyse erfasst" : "berechenbar";
+      notes.push(`„${name}“ ist nur für ${F.int(have)} von ${F.int(base.length)} Aktien ${why}`);
+    }
+    const el = $("#w-note");
+    el.hidden = !notes.length;
+    if (notes.length) {
+      el.innerHTML = `Hinweis: ${notes.map(esc).join("; ")}. Aktien ohne diesen Wert fallen aus der Liste.
+        ${pendingDeep ? ` Die Tiefenanalyse rechnet ${F.int(pendingDeep)} Aktien neu; die Liste wächst ${managed ? "in den nächsten Nächten" : "mit jedem Durchgang (oben „Starten“)"}.` : ""}`;
+    }
   }
 
   function countBy(skip, field) {
@@ -658,6 +729,7 @@ export async function renderWorld(root, params, isCurrent) {
     $("#w-dir").setAttribute("aria-label", `Sortierrichtung: ${S.dir > 0 ? "aufsteigend" : "absteigend"}, umschalten`);
     paintChips();
     paintSelect();
+    coverageNote();
     writeState(S);
   }
 
@@ -842,6 +914,7 @@ export async function renderWorld(root, params, isCurrent) {
   }
 
   // ---- Tiefenanalyse: Fortschritt anzeigen, starten/pausieren, neue Ergebnisse auf Wunsch übernehmen
+  let pendingDeep = 0; // Aktien, deren Tiefenwerte fehlen oder neu berechnet werden
   function paintDeep(st, version) {
     const d = st?.deep;
     const el = $("#w-deep");
@@ -849,13 +922,15 @@ export async function renderWorld(root, params, isCurrent) {
     const universe = d.universe || rows.length;
     const analysed = Math.min(d.analysed, universe);
     const pctDone = universe ? analysed / universe : 0;
-    const state = managed ? (analysed >= universe ? "vollständig" : "wird jede Nacht fortgesetzt")
+    pendingDeep = Math.min(d.stale || 0, universe) + Math.max(0, universe - analysed);
+    const long = F.isNum(d.long_history) ? ` · ${F.int(Math.min(d.long_history, universe))} mit mindestens 5 Jahren Bilanzdaten` : "";
+    const state = managed ? (pendingDeep ? `${F.int(pendingDeep)} werden in den nächsten Nächten neu berechnet` : "vollständig")
       : d.running
         ? (d.throttled_until ? "Yahoo drosselt, kurze Pause …" : `läuft${d.current ? ` (gerade ${esc(d.current)})` : ""}`)
-        : d.paused ? "pausiert" : analysed >= universe ? "vollständig" : "wartet";
+        : d.paused ? "pausiert" : pendingDeep ? `${F.int(pendingDeep)} zu erneuern` : analysed >= universe ? "vollständig" : "wartet";
     const fresh = version && memo?.version !== version
       ? ' · <button class="linklike" id="w-deep-load" type="button">neue Ergebnisse übernehmen</button>' : "";
-    el.innerHTML = `<span>${term("tiefenanalyse", "Tiefenanalyse")}: ${F.int(analysed)} von ${F.int(universe)} Aktien (${F.pct(pctDone, 0)}) · ${state}${d.errors ? ` · ${F.int(d.errors)} Fehler` : ""}${fresh}</span>
+    el.innerHTML = `<span>${term("tiefenanalyse", "Tiefenanalyse")}: ${F.int(analysed)} von ${F.int(universe)} Aktien (${F.pct(pctDone, 0)})${long} · ${state}${d.errors ? ` · ${F.int(d.errors)} Fehler` : ""}${fresh}</span>
       <div class="progress"><div style="width:${pctDone * 100}%"></div></div>
       ${managed ? "" : `<button class="btn small" id="w-deep-toggle" type="button">${d.running ? "Pausieren" : analysed >= universe && !d.stale ? "Erneut prüfen" : "Starten"}</button>`}`;
     $("#w-deep-toggle")?.addEventListener("click", async () => {
@@ -913,6 +988,16 @@ export async function renderWorld(root, params, isCurrent) {
   });
   $("#w-cap").addEventListener("change", (e) => { S.minCap = parseNum(e.target.value); changed(); });
   $("#w-tr").addEventListener("change", (e) => { S.tr = e.target.checked; setTrOnly(S.tr); changed(); });
+  $("#w-strategy").addEventListener("change", (e) => setStrategy(e.target.value));
+  // Strategie hier oder im Tutorial geändert: Checkliste neu rechnen
+  const onStrategy = () => {
+    if (!isCurrent()) { document.removeEventListener("tutorial-changed", onStrategy); return; }
+    if (strategyKey() === $("#w-strategy").dataset.applied) return;
+    applyChecklist();
+    $("#w-strategy").dataset.applied = strategyKey();
+    changed();
+  };
+  document.addEventListener("tutorial-changed", onStrategy);
   $("#w-add").addEventListener("click", () => {
     const used = new Set(S.rules.map((r) => r.key));
     const candidates = basic ? ["d_dev", "d_stab", "pe", "div_yield", "d_exp", "d_growth"] : ["pe", "div_yield", "roe", "revenue_growth", "net_margin", "net_debt_ebitda"];
@@ -1079,12 +1164,13 @@ export async function renderWorld(root, params, isCurrent) {
   });
 
   setData(loaded.data);
+  $("#w-strategy").dataset.applied = strategyKey();
   normalizeFacets();
   renderControls();
   applyPanel();
+  paintDeep(loaded.status);
   paint();
   showReturnRow();
-  paintDeep(loaded.status);
   if (loaded.status.running) pollRefresh();
   if (loaded.status.deep?.running) pollDeep();
 }

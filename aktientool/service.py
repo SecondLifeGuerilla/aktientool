@@ -9,8 +9,8 @@ import math
 import numpy as np
 import pandas as pd
 
-from . import config
-from .analysis import business, dcf, fundamentals, metrics, scorecard, summary, tax, valuation
+from . import config, rueckblick
+from .analysis import business, dcf, fundamentals, metrics, scorecard, summary, tax, trap, valuation
 from .analysis import dividends as dividends_mod
 from .cache import cache_age, cached, peek
 from .names import SECTORS, industry_de
@@ -217,9 +217,10 @@ def _isin(symbol: str, raw: dict, info: dict, known: str | None) -> str | None:
     return None
 
 
-def _filings(symbol: str, info: dict, isin: str | None, splits: list, warnings: list) -> tuple[list, int | None]:
-    """Pflichtberichte: SEC (US-Firmen und Firmen mit US-Listing), sonst ESEF (europäische Firmen ab 2020)."""
-    out, cik = [], None
+def _filings(symbol: str, info: dict, isin: str | None, splits: list, warnings: list) -> tuple[list, int | None, bool]:
+    """Pflichtberichte: SEC (US-Firmen und Firmen mit US-Listing), sonst ESEF (europäische Firmen ab 2020).
+    Drittes Element: Die SEC war nicht erreichbar, obwohl sie für diese Aktie die Hauptquelle wäre (US-Ticker)."""
+    out, cik, sec_failed = [], None, False
     try:
         cik = sec.find_cik(symbol, info.get("longName") or info.get("shortName"))
         if cik:
@@ -229,6 +230,8 @@ def _filings(symbol: str, info: dict, isin: str | None, splits: list, warnings: 
     except Exception as e:  # SEC nicht erreichbar: mit den übrigen Daten weitermachen
         log.warning("SEC-Daten für %s nicht verfügbar: %s", symbol, e)
         warnings.append("SEC EDGAR war nicht erreichbar; es werden nur die übrigen Jahresabschlüsse verwendet.")
+        # Ticker ohne Börsenkürzel sind US-Notierungen: Dort fehlen ohne SEC die langen Reihen
+        sec_failed = cik is not None or "." not in symbol
     if not out and esef.covers(isin):
         fye = info.get("lastFiscalYearEnd")
         fy_month = dt.datetime.fromtimestamp(fye, dt.timezone.utc).month if isinstance(fye, (int, float)) else None
@@ -239,7 +242,7 @@ def _filings(symbol: str, info: dict, isin: str | None, splits: list, warnings: 
         except Exception as e:
             log.warning("ESEF-Daten für %s nicht verfügbar: %s", symbol, e)
             warnings.append("Die ESEF-Jahresberichte (filings.xbrl.org) waren nicht erreichbar.")
-    return out, cik
+    return out, cik, sec_failed
 
 
 def _country_code(isin: str | None, info: dict) -> str | None:
@@ -268,7 +271,7 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
     is_financial = info.get("sector") == "Financial Services"
 
     warnings = []
-    filings, sec_cik = _filings(symbol, info, isin, raw.get("splits", []), warnings)
+    filings, sec_cik, sec_failed = _filings(symbol, info, isin, raw.get("splits", []), warnings)
     annual = merge_annual(raw.get("annual", {}), fin_ccy, filings, conv)
     ttm = _ttm(raw, info, annual, fin_ccy, conv, price)
 
@@ -285,10 +288,13 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
     val = valuation.build(close, price, annual, ttm, estimates, div_yield or 0.0)
     debt = _debt_years(info, ttm["fcf_total"], is_financial)
     mom = metrics.momentum(close)
+    mom_12_1 = metrics.momentum_12_1(close)
+    revisions = fundamentals.revisions(raw.get("revisions"))
 
     period = val.get("periods", {}).get(val.get("default_period")) if val.get("available") else None
     # bei gerade eingebrochener Kennzahl oder kurzer Historie ist die Abweichung vom fairen Wert nicht aussagekräftig
     deviation = period["deviation"] if period and not _unrated(val) else None
+    warning_signs = trap.build(deviation, (val.get("expected") or {}).get("sources") or {}, revisions, mom, mom_12_1)
     score_values = {
         "earnings_stability": quality["stability"], "earnings_growth": quality["growth"],
         "debt_years": debt["years"], "momentum": mom, "discount": scorecard.discount_score(deviation),
@@ -350,6 +356,7 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
         "data": {
             "fundamentals_source": " + ".join(SOURCE_NAMES[s] for s in sources),
             "sec_cik": sec_cik,
+            "sec_failed": sec_failed,
             "fundamental_years": [fund_years[0], fund_years[-1]] if fund_years else None,
             "financial_currency": fin_ccy,
             "price_start": close.index[0].strftime("%Y-%m-%d"),
@@ -372,7 +379,7 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
             "returns": metrics.period_returns(close, adj, today),
             "ath": metrics.all_time_high(close),
             "momentum": mom,
-            "momentum_12_1": metrics.momentum_12_1(close),
+            "momentum_12_1": mom_12_1,
         },
         "valuation": val,
         "dcf": dcf.build(ttm.get("fcf_ps"), [r["fcf_ps"] for r in annual if r.get("fcf_ps") is not None], price, is_financial),
@@ -383,13 +390,15 @@ def build_profile(symbol: str, refresh: bool = False, light: bool = False, isin:
             "target_mean": target, "target_low": info.get("targetLowPrice"), "target_high": info.get("targetHighPrice"),
             "count": info.get("numberOfAnalystOpinions"), "recommendation": info.get("recommendationKey"),
             "upside": target / price - 1 if target and price else None,
-            "revisions": fundamentals.revisions(raw.get("revisions")),
+            "revisions": revisions,
             "surprises": fundamentals.surprises(raw.get("surprises")),
         },
         "insider": raw.get("insider"),
         "shorts": short_positions,
         "scorecard": cards,
-        "summary": summary.build(quality, period["rating"] if period else None, mom, cards),
+        # Warnzeichen für eine mögliche Value-Falle (Wachstumsbruch, fallende Schätzungen, gebrochener Trend)
+        "trap": warning_signs,
+        "summary": summary.build(quality, period["rating"] if period else None, mom, cards, warning_signs),
     }
     return _clean(profile)
 
@@ -402,7 +411,9 @@ def summary_row(symbol: str, refresh: bool = False, light: bool = False, isin: s
     div = p["dividends"]
     f = p["fundamentals"]
     unrated = _unrated(val)
-    return {
+    expected = val.get("expected") or {}
+    cautious = expected.get("cautious") or {}
+    row = {
         "symbol": p["symbol"], "name": p["name"], "currency": p["currency"],
         "country": p["facts"]["country"], "country_code": p["facts"]["country_code"], "sector": p["facts"]["sector"],
         "industry": p["facts"]["industry"], "isin": p["facts"]["isin"],
@@ -410,12 +421,15 @@ def summary_row(symbol: str, refresh: bool = False, light: bool = False, isin: s
         "earnings_stability": p["quality"]["stability"], "earnings_growth": p["quality"]["growth"],
         "fundamental_points": p["quality"]["count"], "quality_years": p["quality"]["years"],
         "quality_short": p["quality"]["short"],
+        "loss_making": p["quality"]["loss_making"],
         "fundamentals_source": p["data"]["fundamentals_source"],
+        "sec_failed": p["data"].get("sec_failed", False),
         "div_yield": p["facts"]["dividend_yield"],
         "div_ttm": div.get("ttm") if div.get("pays") else 0.0,
         "div_growth": div.get("growth") if div.get("pays") else None,
         "div_stability": div.get("stability") if div.get("pays") else None,
         "div_streak": div.get("increase_streak") if div.get("pays") else 0,
+        "div_no_cut": div.get("no_cut_streak") if div.get("pays") else 0,
         "div_payment_months": sorted({int(d[5:7]) for d, _ in div.get("payments", [])
                                       if d >= (pd.Timestamp.today() - pd.DateOffset(years=1)).strftime("%Y-%m-%d")}),
         "payout": div.get("payout_eps") if div.get("pays") else None,
@@ -428,11 +442,19 @@ def summary_row(symbol: str, refresh: bool = False, light: bool = False, isin: s
         "valuation_basis": val.get("metric_key") if val.get("available") else None,
         "deviation": period["deviation"] if period and not unrated else None,
         "rating": period["rating"] if period else None,
-        "expected_return": (val.get("expected") or {}).get("by_period", {}).get(val.get("default_period"))
+        "expected_return": expected.get("by_period", {}).get(val.get("default_period"))
         if period and not unrated else None,
+        # vorsichtige Variante: niedrigere Wachstumsquelle, keine Rückkehr zu einem höheren Multiple
+        "expected_cautious": cautious.get("by_period", {}).get(val.get("default_period"))
+        if period and not unrated else None,
+        "cautious_growth": cautious.get("growth"),
+        "analyst_growth": (expected.get("sources") or {}).get("analysts"),
+        "warning_signs": p["trap"]["count"],
+        "value_trap": p["trap"]["trap"],
         "implied_growth": (p["dcf"].get("rates") or {}).get("0.09"),
         "fcf_yield": f["fcf_yield"],
         "roic": f["roic"]["latest"],
+        "roic_avg": f["roic"]["average"],
         "piotroski": f["piotroski"]["score"],
         "share_cagr": f["shares"]["cagr"],
         "revisions_90d": p["analysts"]["revisions"]["change90"],
@@ -441,3 +463,7 @@ def summary_row(symbol: str, refresh: bool = False, light: bool = False, isin: s
         "dividend_pay_date": p["facts"]["dividend_pay_date"],
         "scores": {s["key"]: s["score"] for s in p["scorecard"]},
     }
+    if light:
+        # Hintergrundlauf: Monatsschlusskurse für den Rückblick im Score-Check (die Kurshistorie ist ohnehin geladen)
+        row["monthly"] = rueckblick.monthly_closes(p["price"]["series"])
+    return row
