@@ -45,7 +45,8 @@ SHORT_RELIABILITY = "kaum beurteilbar"
 LOSS_RELIABILITY = "von Verlusten geprägt"
 
 
-def build(quality: dict, valuation_rating: dict | None, momentum: float | None, scorecard: list[dict]) -> dict:
+def build(quality: dict, valuation_rating: dict | None, momentum: float | None, scorecard: list[dict],
+          warning_signs: dict | None = None) -> dict:
     short = quality.get("short", False)  # weniger als ~5 Jahre: kein Urteil über Zuverlässigkeit und Wachstum
     reliability = (LOSS_RELIABILITY if quality.get("loss_making")
                    else SHORT_RELIABILITY if short else earnings_reliability(quality.get("stability")))
@@ -75,6 +76,10 @@ def build(quality: dict, valuation_rating: dict | None, momentum: float | None, 
         label = valuation_rating["label"]
         if "über" in label:
             parts.append(f"Die Bewertung ({label}) spricht jedoch für einen ungünstigen Kaufzeitpunkt.")
+        elif "unter" in label and (warning_signs or {}).get("trap"):
+            # billig gemessen an der eigenen Vergangenheit, aber die Vergangenheit setzt sich womöglich nicht fort
+            parts.append(f"Die Aktie wirkt günstig ({label}), {warning_signs['count']} Warnzeichen sprechen aber für "
+                         "Vorsicht: Sie könnte zu Recht billig sein (mögliche Value-Falle).")
         elif "unter" in label:
             parts.append(f"Die Bewertung ({label}) spricht für einen günstigen Kaufzeitpunkt.")
         else:

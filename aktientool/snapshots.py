@@ -19,6 +19,7 @@ from . import config, remote
 
 KEEP = ["symbol", "isin", "country", "sector", "currency", "price", "market_cap",
         "score_total", "score_quality", "score_value", "score_growth", "score_momentum", "score_dividend", "magic_formula",
+        "score_stability", "d_exp_lo", "d_warn", "d_trap",
         "pe", "pb", "div_yield", "perf_1y", "momentum", "roe", "net_margin", "revenue_growth",
         "d_stab", "d_growth", "d_dev", "d_exp", "d_sc_inc", "d_sc_dg", "d_sc_eg", "d_roic", "d_pio", "d_rev90", "d_mom121",
         "d_dcf", "d_short"]

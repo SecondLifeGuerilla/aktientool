@@ -54,7 +54,7 @@ const STRATEGIES = {
     watch: ["Dividendenrendite, auch nach Steuern", "Ausschüttungsquote: Bleibt Luft nach oben?", "Jahre ohne Kürzung", "Stabilität von Gewinn und Dividende"],
     preset: "Dividendenperlen",
     presetWhy: "Sie verlangt mindestens 3 % Dividendenrendite, 10 Jahre Dividendensteigerungen in Folge und eine Ausschüttungsquote von höchstens 75 %.",
-    more: ["Dividenden-Aristokraten"],
+    more: ["Kauf-Checkliste", "Dividenden-Aristokraten"],
   },
   dividend_growth: {
     label: "Dividendenwachstum",
@@ -64,7 +64,7 @@ const STRATEGIES = {
     watch: ["Dividendenwachstum pro Jahr", "Gewinnwachstum, das künftige Erhöhungen bezahlt", "Ausschüttungsquote", "Steigerungen in Folge"],
     preset: "Dividendenwachstum",
     presetWhy: "Sie zeigt alle Aktien mit einem Scorecard-Score für Dividendenwachstum von mindestens 8 von 10.",
-    more: ["Dividenden-Aristokraten", "Rückkäufer mit Rückenwind"],
+    more: ["Kauf-Checkliste", "Dividenden-Aristokraten", "Rückkäufer mit Rückenwind"],
   },
   earnings_growth: {
     label: "Gewinnwachstum",
@@ -73,11 +73,15 @@ const STRATEGIES = {
     core: "Gewinnwachstum (volle Punktzahl ab 20 % pro Jahr)",
     watch: ["Gewinnstabilität und Gewinnwachstum", "Kapitalrendite (ROIC)", "Tilgungsjahre", "Kurs vs. fairer Wert und erwartete Rendite"],
     preset: "Hohe erwartete Rendite",
-    presetWhy: "Sie verlangt eine erwartete Rendite von mindestens 12 % pro Jahr bei einer Gewinnstabilität von mindestens 0,7: Qualität zu einem Preis, der noch Luft nach oben lässt.",
-    more: ["Stabil & unterbewertet", "Qualität zum fairen Preis", "Bilanzstark"],
+    presetWhy: "Sie verlangt eine vorsichtig gerechnete erwartete Rendite von mindestens 8 % pro Jahr bei einer Gewinnstabilität von mindestens 0,7: Qualität zu einem Preis, der auch dann Rendite lässt, wenn die Aktie nicht wieder so hoch bewertet wird wie früher.",
+    more: ["Kauf-Checkliste", "Stabil & unterbewertet", "Qualität zum fairen Preis", "Bilanzstark"],
   },
 };
 const strategyKey = () => (store.strategy in STRATEGIES ? store.strategy : "earnings_growth");
+// Die Weltauswahl lässt die Strategie für ihre Checklisten-Spalte wählen (checklist.js)
+document.addEventListener("strategy-set", (e) => {
+  if (e.detail in STRATEGIES && e.detail !== store.strategy) { store.strategy = e.detail; persist(); }
+});
 const strategy = () => STRATEGIES[strategyKey()];
 
 // Einordnungen wie im Fazit des Profils (analysis/summary.py)
@@ -631,6 +635,7 @@ const findLesson = (id) => LESSONS.find((l) => l.id === id) || TOURS.find((t) =>
 const kickerOf = (L) => (L.page ? `Kurz-Tour · ${L.short}` : `Lektion ${L.n} · ${L.short}`);
 
 // ---------------------------------------------------------------- Kauf-Checkliste
+const TRAP_ITEM = "Keine Warnung vor einer Value-Falle";
 // Schwellen nach den Regeln des Tools (Fazit, Scorecard, Bewertung). ok: true erfüllt, false nicht erfüllt, null nicht prüfbar.
 function checklist(p, key) {
   const items = [];
@@ -671,6 +676,11 @@ function checklist(p, key) {
       `${F.signedPct(per.deviation, 0)} · ${esc(per.rating?.label || "")}`, unsure ? "Einordnung unsicher" : `Durchschnitt ${v.default_period} Jahre`);
     const er = v.expected?.by_period?.[v.default_period];
     add("Preis", "Erwartete Rendite mindestens 8 % pro Jahr", unsure || !F.isNum(er) ? null : er >= 0.08, F.signedPct(er, 1), unsure ? "Einordnung unsicher" : "");
+    // billig gemessen an der eigenen Vergangenheit, aber Wachstum, Schätzungen oder Kurs sprechen dagegen
+    const trap = p.trap;
+    add("Preis", TRAP_ITEM, unsure || !trap ? null : !trap.trap,
+      trap ? (trap.count ? `${trap.count} Warnzeichen` : "keine Warnzeichen") : "–",
+      trap?.trap ? trap.signs.map((s) => esc(s.text)).join(" ") : "");
   }
 
   const rev = p.analysts?.revisions || {};
@@ -710,8 +720,12 @@ function rate(items) {
   const qualityOk = quality.length > 0 && quality.filter((i) => i.ok).length / quality.length >= 0.75;
   const priceBad = group("Preis").some((i) => !i.ok);
   let verdict;
+  const trapped = items.some((i) => i.label === TRAP_ITEM && i.ok === false);
   if (checked.length < items.length / 2) {
     verdict = ["neutral", "Kaum prüfbar", "Für zu viele Punkte fehlen Daten. Sehen Sie sich das Profil genau an oder üben Sie mit einer Aktie mit längerer Historie."];
+  } else if (trapped) {
+    // billig und trotzdem kein Kauf: Der niedrige Kurs hat womöglich einen guten Grund
+    verdict = ["warning", "Günstig, aber mit Warnzeichen", "Klären Sie zuerst, warum die Aktie so billig ist. Bricht das Wachstum ab, ist der faire Wert zu hoch angesetzt; die Warnzeichen stehen im Profil unter „Fairer Wert“."];
   } else if (qualityOk && priceBad) {
     verdict = ["warning", "Gute Firma, aber der Preis passt (noch) nicht", "Setzen Sie die Aktie auf die Watchlist und legen Sie einen Alarm „x % unter fairem Wert“ an."];
   } else if (share >= 0.8) {

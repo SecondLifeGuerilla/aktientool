@@ -32,7 +32,8 @@ const COLUMNS = [
   { key: "debt_years", label: "Tilgungs­jahre", term: "tilgungsjahre", get: (r) => (r.debt_infinite ? Infinity : r.debt_years) },
   { key: "momentum", label: "Momentum", term: "momentum", get: (r) => r.momentum },
   { key: "deviation", label: "Kurs vs. fairer Wert", term: "fairer_wert", basic: true, get: (r) => r.deviation },
-  { key: "expected_return", label: "Erw. Rendite p. a.", term: "erwartete_rendite", basic: true, get: (r) => r.expected_return },
+  // sortiert nach der vorsichtigen Variante (ohne Bewertungsaufholung), angezeigt wird die Spanne bis zum Modellwert
+  { key: "expected_return", label: "Erw. Rendite p. a.", term: "erwartete_rendite", basic: true, get: (r) => r.expected_cautious ?? r.expected_return },
   { key: "piotroski", label: "Piotroski", term: "piotroski", get: (r) => r.piotroski },
   { key: "score", label: "Scores", term: "scorecard", get: (r, s) => r.scores?.[s.strategy] },
   { key: "watch", label: "", basic: true, get: () => null },
@@ -56,7 +57,7 @@ function parseNum(s) {
 // Leere Watchlist: Wege zu den ersten Kandidaten
 function emptyWatchlist() {
   return `Die Watchlist ist leer. Merken Sie sich Kandidaten mit ☆ in der Weltauswahl oder mit „Zur Watchlist“ im Aktienprofil. Gute Startpunkte:
-    <div class="preset-row" style="margin:8px 0 4px">${["Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten"]
+    <div class="preset-row" style="margin:8px 0 4px">${["Kauf-Checkliste", "Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten"]
       .map((n) => `<a class="btn" href="${esc(presetHref(n))}">${esc(n)}</a>`).join("")}</div>`;
 }
 
@@ -203,7 +204,15 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
       case "debt_years": return `<td>${r.debt_infinite ? "∞" : F.num(r.debt_years, 1)}</td>`;
       case "momentum": return `<td>${F.signedPct(r.momentum, 1)}</td>`;
       case "deviation": return `<td>${r.rating ? `<span class="badge ${r.rating.status}" title="${esc(r.rating.label)}">${F.signedPct(r.deviation, 0)}</span>` : "–"}</td>`;
-      case "expected_return": return `<td class="${(r.expected_return ?? 0) >= 0.08 ? "good" : (r.expected_return ?? 0) < 0 ? "bad" : ""}">${F.signedPct(r.expected_return, 1)}</td>`;
+      case "expected_return": {
+        const hi = r.expected_return;
+        const lo = r.expected_cautious;
+        const range = F.isNum(lo) && F.isNum(hi) && Math.abs(hi - lo) >= 0.005;
+        const worst = range ? Math.min(lo, hi) : hi;
+        const trap = r.value_trap ? ' <span class="badge serious" title="Wirkt günstig, hat aber mindestens zwei Warnzeichen: Wachstumsbruch, fallende Schätzungen oder gebrochener Kurstrend">Value-Falle?</span>' : "";
+        return `<td class="${(worst ?? 0) >= 0.08 ? "good" : (worst ?? 0) < 0 ? "bad" : ""}"${range ? ' title="vorsichtig gerechnet bis Modell"' : ""}>${
+          range ? `${F.signedPct(Math.min(lo, hi), 1)} bis ${F.signedPct(Math.max(lo, hi), 1)}` : F.signedPct(hi, 1)}${trap}</td>`;
+      }
       case "piotroski": return `<td>${F.isNum(r.piotroski) ? `${r.piotroski} / 9` : "–"}</td>`;
       case "score": {
         const chips = STRATEGIES.map(([k, l]) => {
@@ -354,10 +363,10 @@ export async function renderScreener(root, listName, isCurrent, symbols = null) 
     const pct = (v) => csvNum(F.isNum(v) ? v * 100 : null, 2);
     const header = ["Name", "Ticker", "Land", "Währung", "Börsenwert", "Gewinnstabilität", "Gewinnwachstum p. a. (%)", "Div.-Rendite (%)",
       "Div.-Wachstum p. a. (%)", "Ausschüttung (%)", "Tilgungsjahre", "Momentum (%)", "Kurs vs. fairer Wert (%)", "Erw. Rendite p. a. (%)",
-      "Piotroski", ...STRATEGIES.map(([, l]) => `Score ${l}`), "Geschäftsjahre", ...(isWatch ? ["Gruppen"] : [])];
+      "Erw. Rendite vorsichtig (%)", "Warnzeichen", "Piotroski", ...STRATEGIES.map(([, l]) => `Score ${l}`), "Geschäftsjahre", ...(isWatch ? ["Gruppen"] : [])];
     const rows = shownOk.map((r) => [r.name, r.symbol, r.country || "", r.currency || "", csvNum(r.market_cap, 0), csvNum(r.earnings_stability, 3),
       pct(r.earnings_growth), pct(r.div_yield), pct(r.div_growth), pct(r.payout), r.debt_infinite ? "unendlich" : csvNum(r.debt_years, 2),
-      pct(r.momentum), pct(r.deviation), pct(r.expected_return), r.piotroski ?? "", ...STRATEGIES.map(([k]) => r.scores?.[k] ?? ""),
+      pct(r.momentum), pct(r.deviation), pct(r.expected_return), pct(r.expected_cautious), r.warning_signs ?? "", r.piotroski ?? "", ...STRATEGIES.map(([k]) => r.scores?.[k] ?? ""),
       r.fundamental_points ?? "", ...(isWatch ? [groupsOf(groups, r.symbol).map((g) => pathLabel(groups, g.id)).join("; ")] : [])]);
     if (!rows.length) { toast("Noch keine Zeilen geladen."); return; }
     downloadCsv(`${isWatch ? "watchlist" : `screener-${listName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}-${today()}.csv`, header, rows);

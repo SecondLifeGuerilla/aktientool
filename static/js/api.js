@@ -151,6 +151,7 @@ export const api = {
   deepStart: () => request("POST", "/api/deep/start"),
   deepPause: () => request("POST", "/api/deep/pause"),
   snapshots: () => request("GET", "/api/snapshots"),
+  rueckblick: () => request("GET", "/api/rueckblick"),
   snapshotEval: (from, to, key, dir) => request("GET", `/api/snapshots/eval?from=${enc(from)}&to=${enc(to)}&key=${enc(key)}${dir ? `&dir=${dir}` : ""}`),
 };
 

@@ -28,6 +28,10 @@ Einrichten:
    10 Minuten steht der Zwischenstand (Weltauswahl, Handelsliste, Fonds) auf dem Branch `data`, danach läuft er jede Nacht.
 3. Optional in Vercel: `AKTIENTOOL_SEC_USER_AGENT` mit eigener Kontaktadresse (verlangt die SEC) und
    `AKTIENTOOL_DATA_URL`, falls die Daten aus einem anderen Repo kommen sollen.
+4. Optional in GitHub (Settings → Secrets and variables → Actions → Variables): `SEC_USER_AGENT` mit eigener
+   Kontaktadresse für den täglichen Workflow, Form „Name kontakt@domain“. Die Kennung darf nicht „GitHub“ enthalten:
+   Solche Kennungen lehnt die SEC mit 403 ab, und alle US-Aktien hätten dann nur 3 bis 4 Jahre Bilanzdaten von Yahoo.
+   Der Workflow meldet das als Warnung („SEC EDGAR nicht erreichbar“).
 
 Hinweise: GitHub pausiert geplante Workflows in Repos ohne Aktivität nach 60 Tagen (dann in Actions wieder aktivieren).
 Alarme prüft der Browser alle 30 Minuten, solange das Tool in einem Tab offen ist (auf Wunsch mit Mitteilung des Browsers);
@@ -148,9 +152,10 @@ nicht fest hinterlegt, sondern wird live über den Yahoo-Screener geladen (ca. 2
 | Funktion | Inhalt |
 | --- | --- |
 | Filter | Kontinent, Land, Sektor, Branche, Anlagethema (Mehrfachauswahl mit Trefferzahlen), Suche nach Name/Ticker/ISIN, Mindest-Börsenwert. Aktive Filter stehen als Chips in der Kopfzeile des Filterbereichs (✕ entfernt einen); der Bereich lässt sich einklappen, dann beginnt die Tabelle fast oben (die Wahl bleibt im Browser, während einer Tutorial-Tour ist er immer offen) |
-| Kennzahl-Filter | beliebig viele Bedingungen „mindestens/höchstens“ auf jede Kennzahl und jeden Score; Vorlagen u. a. Stabil & unterbewertet, Hohe erwartete Rendite, Dividenden-Aristokraten, Dividendenwachstum, Bilanzstark, Rückkäufer mit Rückenwind, Attraktivste (Gesamt-Score), Magic Formula, Dividendenperlen |
-| Tiefenanalyse | Gewinnstabilität, Gewinnwachstum, Kurs vs. fairer Wert, erwartete Rendite, Scorecard-Scores, Dividende netto, eigene Dividendensteigerungen, ROIC, Piotroski, Aktienzahl, Revisionen, Momentum 12-1, Reverse-DCF, FCF-Rendite für jede Aktie, im Hintergrund berechnet (siehe unten) |
-| Scores (0–100) | Gesamt, Qualität, Bewertung, Wachstum, Momentum, Dividende, Magic Formula (Berechnung siehe Methodik) |
+| Kennzahl-Filter | beliebig viele Bedingungen „mindestens/höchstens“ auf jede Kennzahl und jeden Score; Vorlagen u. a. Kauf-Checkliste (mindestens 9 Punkte erfüllt), Stabil & unterbewertet (ohne Value-Fallen), Hohe erwartete Rendite (vorsichtig gerechnet), Dividenden-Aristokraten, Dividendenwachstum, Bilanzstark, Rückkäufer mit Rückenwind, Attraktivste (Gesamt-Score), Magic Formula, Dividendenperlen |
+| Kauf-Checkliste | Spalte, Sortierung und Filter „erfüllt x von y Punkten“: dieselben Prüfungen wie die Checkliste im Tutorial (Datenbasis, Qualität, Preis, Rückenwind, Strategie), für die neben den Vorlagen gewählte Strategie; der Tooltip nennt die nicht erfüllten Punkte. Unter der Trefferzahl steht ein Hinweis, wenn eine gefilterte Kennzahl nur für wenige Aktien vorliegt |
+| Tiefenanalyse | Datenjahre und Quelle, Gewinnstabilität, Gewinnwachstum, Kurs vs. fairer Wert, erwartete Rendite (Modell und vorsichtig), Warnzeichen für eine Value-Falle, Scorecard-Scores, Dividende netto, eigene Dividendensteigerungen, ROIC, Piotroski, Aktienzahl, Revisionen, Momentum 12-1, Reverse-DCF, FCF-Rendite für jede Aktie, im Hintergrund berechnet (siehe unten) |
+| Scores (0–100) | Gesamt, Qualität, Bewertung, Wachstum, Momentum, Beständigkeit, Dividende, Magic Formula (Berechnung siehe Methodik) |
 | Themen | Künstliche Intelligenz, Robotik & Automatisierung, Humanoide Robotik, Cybersecurity, Rechenzentren & Stromnetze, Elektromobilität & Batterien, Erneuerbare Energien, Rüstung & Verteidigung, Quantencomputing |
 | Kennzahlen | Börsenwert, Umsatz, KGV, KGV erwartet, KBV, KUV, EV/EBITDA, PEG, Dividendenrendite, Dividendensteigerungen in Folge, Ausschüttungsquote, Eigen-/Gesamtkapitalrendite, Brutto-/EBITDA-/Nettomarge, Umsatz- und Gewinnwachstum, erwartetes Gewinnwachstum, Verschuldungsgrad, Nettoschulden/EBITDA, Altman-Z-Score, Beta, Kursentwicklung 1 Jahr, Momentum, Abstand zum Hoch, Analysten-Rating |
 | Ansichten | Überblick, Scores, Bewertung, Rentabilität, Wachstum, Dividende, Qualität & fairer Wert, Signale, Bilanz & Risiko, Kurs & Analysten; Sortieren per Spaltenklick oder Auswahl |
@@ -169,6 +174,20 @@ etwa 4–5 Sekunden je Aktie, für die ganze Auswahl einige Stunden). Er startet
 speichert alle 25 Aktien, setzt nach einem Neustart fort und lässt sich in der Weltauswahl pausieren. Ein Ergebnis
 gilt eine Woche. Abweichung vom fairen Wert und erwartete Rendite werden mit dem aktuellen Kurs neu berechnet. Aktien,
 die noch nicht analysiert sind, fallen bei Filtern auf diese Kennzahlen heraus.
+
+Wie belastbar die Werte sind, hängt an der Länge der Bilanzreihe: Yahoo liefert 3 bis 4 Jahre, die SEC für US-Firmen
+und Firmen mit US-Listing oft 15, die ESEF-Berichte für viele europäische Firmen die Jahre ab 2020. Unter 5 Jahren
+erfüllt eine Aktie Filter „Gewinnstabilität/-wachstum mindestens …“ nicht, zählt im Beständigkeits-Score höchstens
+neutral und bekommt keinen eingeordneten fairen Wert. Die Zeile über den Filtern nennt, wie viele Aktien mindestens
+5 Jahre haben; die Spalte „Datenjahre“ zeigt Länge und Quelle je Aktie.
+
+**Vorsichtige Rendite und Value-Fallen:** Die erwartete Rendite des Modells unterstellt, dass die Aktie wieder so
+bewertet wird wie im Durchschnitt der Vergangenheit, und mittelt Analystenerwartung und Historie. Daneben steht die
+vorsichtige Variante: niedrigere der beiden Wachstumsquellen, das Multiple bleibt, wo es ist (liegt es über dem
+Durchschnitt, fällt es dorthin). Drei Warnzeichen prüfen, ob die Vergangenheit noch trägt: Analysten erwarten sinkende
+Gewinne oder weniger als die Hälfte des bisherigen Wachstums; die Gewinnschätzung wurde in 90 Tagen um mindestens 3 %
+gesenkt; Kurs unter der 200-Tage-Linie bei negativem Momentum 12-1. Liegt der Kurs mindestens 10 % unter dem fairen
+Wert und treffen zwei Warnzeichen zu, gilt die Aktie als mögliche Value-Falle (`analysis/trap.py`).
 
 **Depot** (`#/depot`): Käufe mit Stückzahl, Kaufkurs in Euro (wie in der Abrechnung der Bank) und Datum erfassen. Käufe aus
 der Zeit davor (ohne Feld `currency`) stehen in der Kurswährung und werden zum heutigen Kurs umgerechnet.
@@ -195,7 +214,15 @@ je Zeile hervorgehoben) und gemeinsamer Wertentwicklung inkl. Dividenden.
 **Score-Check** (`#/score-check`): Die Weltauswahl speichert jeden Tag einen kompakten Stand (`data/snapshots/`,
 rund 300 KB je Tag). Der Score-Check zeigt, wie sich die Aktien seit einem gewählten Tag entwickelt haben, aufgeteilt
 in fünf Gruppen nach ihrem damaligen Score, dazu die Rangkorrelation. So lässt sich prüfen, ob ein Score tatsächlich
-Rendite vorhersagt. Rückwirkend geht das mit kostenlosen Daten nicht, deshalb wird ab dem ersten Start gesammelt.
+Rendite vorhersagt. Für Scores aus Bilanzdaten geht das rückwirkend mit kostenlosen Daten nicht, deshalb wird ab dem
+ersten Start gesammelt.
+
+Für Kennzahlen, die sich allein aus Kursen ergeben, gibt es den **Rückblick** (`#/score-check?teil=rueckblick`): Die
+Tiefenanalyse legt je Aktie die Monatsschlusskurse der letzten 11 Jahre ab (`monatskurse`, serverlos als
+`monatskurse.json.gz` auf dem Branch `data`). Daraus wird für jeden Monat berechnet, wie die Fünftel nach Momentum
+12-1, Kursentwicklung 12 Monate, Abstand zum 10-Monats-Durchschnitt und Abstand zum 12-Monats-Hoch in den folgenden
+1, 3, 6 und 12 Monaten abgeschnitten haben (`aktientool/rueckblick.py`). Grenze: Geprüft wird die heutige
+Weltauswahl; inzwischen geschrumpfte oder verschwundene Firmen fehlen, die Renditen sind deshalb zu hoch.
 
 **Call/Put-Rechner** (`#/callput?s=SAP.DE`, Menü „Mehr“ oder Knopf „Call/Put“ im Profil): rechnet Optionsscheine und
 Knock-out-Produkte (Turbos, Mini-Futures) auf eine Aktie oder einen Index durch. Eingaben aus dem Produktblatt: Call oder
@@ -417,6 +444,10 @@ Watchlist oder eigene Tickerliste), filtern und nach Spalten bzw. Score sortiere
 | Momentum 12-1 | Kurs vor einem Monat ÷ Kurs vor 12 Monaten − 1 |
 | Dividende nach Steuern | Quellensteuer + max(0, 25 % − anrechenbare Quellensteuer) × 1,055 (Soli); Sätze je Sitzland (ISIN) in [`aktientool/quellensteuer.json`](aktientool/quellensteuer.json), ohne Kirchensteuer und Sparerpauschbetrag |
 | Score-Check | Kursrendite (ohne Dividenden) zwischen zwei Tagesständen je Fünftel nach Score; Rangkorrelation nach Spearman |
+| Rückblick | je Monat Fünftel nach Kursfaktor, Folgerendite über 1/3/6/12 Monate (mit Dividenden, Kurswährung), gemittelt über alle Monate mit mindestens 200 Aktien; Trefferquote = Anteil der Monate, in denen das stärkste Fünftel vor dem schwächsten lag |
+| Beständigkeits-Score | Rang im Sektor bei Gewinnstabilität (unter 5 Jahren Daten höchstens 0,5) und Ø-Kapitalrendite (ROIC, bis 4 Jahre); fünfter Teil des Gesamt-Scores, wo die Tiefenanalyse vorliegt |
+| Erwartete Rendite, vorsichtig | min(1, fairer Wert ÷ Kurs)^(1/5) × (1 + niedrigere Wachstumsquelle) − 1 + Dividendenrendite |
+| Kauf-Checkliste | erfüllte von prüfbaren Punkten; Schwellen wie im Tutorial (`static/js/checklist.js`, `static/js/tutorial.js`) |
 
 Die Werte weichen von denen des Aktienfinders ab, der kostenpflichtige Daten (FactSet, Morningstar) mit
 30 Jahren Historie nutzt und seine genauen Formeln nicht veröffentlicht. Keine Anlageberatung.
@@ -455,6 +486,7 @@ aktientool/
   world.py                 Weltauswahl: Börsen laden, Notierungen zusammenführen, Land bestimmen, Aufbau im Hintergrund
   deep.py                  Tiefenanalyse der Weltauswahl im Hintergrund (fortsetzbar)
   snapshots.py             Tagesstände der Weltauswahl und Score-Check
+  rueckblick.py            Monatskurse der Tiefenanalyse und Rückblick der Kursfaktoren für den Score-Check
   alerts.py                Alarme prüfen (die Alarme schickt der Browser mit)
   userdata.py              Kontext der Anfrage: Korrekturen zur Handelbarkeit und eigene Holdings (prüft sie)
   trusts.py                Trusts & Holdings: Fondsliste im Hintergrund, innerer Wert der Holdings, Positionen

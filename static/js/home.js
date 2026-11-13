@@ -18,12 +18,13 @@ const QUOTES_MAX = 100; // Grenze von /api/quotes
 const WORLD_LINKS = [
   ["Europa", "#/welt?kontinent=Europa", true], ["Nordamerika", "#/welt?kontinent=Nordamerika", true], ["Asien", "#/welt?kontinent=Asien"],
   ["Deutschland", "#/welt?land=DE", true], ["DACH", "#/welt?land=DE|AT|CH"],
+  ["Kauf-Checkliste", presetHref("Kauf-Checkliste"), true],
   ["Stabil & unterbewertet", presetHref("Stabil & unterbewertet"), true], ["Hohe erwartete Rendite", presetHref("Hohe erwartete Rendite"), true],
   ["Dividenden-Aristokraten", presetHref("Dividenden-Aristokraten"), true], ["Dividendenperlen", presetHref("Dividendenperlen")],
 ];
 const TOOL_LINKS = [["Termine", "#/termine"], ["Vergleich", "#/vergleich"], ["Score-Check", "#/score-check"]];
 // Vorschläge, wenn die Watchlist leer ist
-const STARTER_PRESETS = ["Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten"];
+const STARTER_PRESETS = ["Kauf-Checkliste", "Stabil & unterbewertet", "Hohe erwartete Rendite", "Dividenden-Aristokraten"];
 
 const loadingLine = (text) => `<p class="muted dash-loading"><span class="spinner inline"></span>${esc(text)}</p>`;
 

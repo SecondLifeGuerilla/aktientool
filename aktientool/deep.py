@@ -15,7 +15,8 @@ import math
 import threading
 import time
 
-from . import config, service
+from . import config, rueckblick, service
+from .analysis import trap, valuation
 from .cache import cache_mtime, peek, store
 
 log = logging.getLogger(__name__)
@@ -23,13 +24,16 @@ log = logging.getLogger(__name__)
 FLUSH_EVERY = 25  # nach so vielen Aktien speichern (die Weltauswahl lädt dann die neuen Werte)
 RATE_LIMIT_PAUSE = 180  # Sekunden Pause, wenn Yahoo drosselt
 ERROR_RETRY = 24 * 3600  # fehlgeschlagene Aktien erst nach einem Tag erneut versuchen
-# 2: keine Gewinnstabilität bei überwiegenden Verlusten. Ältere Einträge mit Stabilität, aber ohne Gewinnwachstum
-# (typisch für Verlustreihen) werden beim nächsten Durchgang sofort erneuert statt erst nach einer Woche
-VERSION = 2
+# 2: keine Gewinnstabilität bei überwiegenden Verlusten.
+# 3: SEC-Daten im täglichen Workflow (vorher lehnte die SEC dessen Kennung ab, alle US-Aktien hatten nur 3 bis 4 Jahre
+#    von Yahoo), dazu vorsichtige Rendite, Warnzeichen, Ø-Kapitalrendite und Monatskurse für den Rückblick.
+# Einträge einer älteren Version werden beim nächsten Durchgang erneuert statt erst nach einer Woche; bis dahin
+# bleiben ihre Werte in der Weltauswahl sichtbar.
+VERSION = 3
 
 _lock = threading.Lock()
 _state = {"running": False, "paused": False, "done": 0, "total": 0, "fresh": 0, "current": None, "errors": 0,
-          "started": None, "finished": None, "last_error": None, "throttled_until": None}
+          "sec_errors": 0, "started": None, "finished": None, "last_error": None, "throttled_until": None}
 _store: dict | None = None  # {"rows": {symbol: {...}}, "paused": bool}
 _store_mtime: float | None = None
 _stop = threading.Event()
@@ -66,12 +70,19 @@ def compact(row: dict) -> dict:
         "p": r(row.get("price"), 6),
         "stab": r(row.get("earnings_stability")), "growth": r(row.get("earnings_growth")),
         "years": r(row.get("quality_years"), 1), "short": bool(row.get("quality_short")),
+        "loss": True if row.get("loss_making") else None,  # überwiegend Verluste: keine Stabilität, aber prüfbar
         # „SEC EDGAR + Yahoo Finance“ -> „SEC“, „ESEF-Jahresberichte + …“ -> „ESEF“
         "src": (row.get("fundamentals_source") or "").split(" ")[0].split("-")[0] or None,
         "fair": r(row.get("fair_value"), 6), "rated": row.get("deviation") is not None, "rating": rating,
         "exp": r(row.get("expected_return")), "dy": r(row.get("div_yield")),
+        # vorsichtige Rendite: Wachstum dafür (die niedrigere Quelle); gerechnet wird beim Zusammenführen zum Tageskurs
+        "g_lo": r(row.get("cautious_growth")) if row.get("expected_cautious") is not None else None,
+        "ag": r(row.get("analyst_growth")), "warn": row.get("warning_signs"),
+        "roic_avg": r(row.get("roic_avg")),
+        # SEC nicht erreichbar, obwohl sie die Hauptquelle wäre: schon am nächsten Tag erneut versuchen
+        "sec_err": True if row.get("sec_failed") else None,
         "div_growth": r(row.get("div_growth")), "div_stab": r(row.get("div_stability")),
-        "streak": row.get("div_streak"), "payout": r(row.get("payout")),
+        "streak": row.get("div_streak"), "nocut": row.get("div_no_cut"), "payout": r(row.get("payout")),
         "debt": None if row.get("debt_infinite") else r(row.get("debt_years"), 2), "debt_inf": bool(row.get("debt_infinite")),
         "sc_inc": scores.get("dividend_income"), "sc_dg": scores.get("dividend_growth"), "sc_eg": scores.get("earnings_growth"),
         "roic": r(row.get("roic")), "pio": row.get("piotroski"), "shares": r(row.get("share_cagr")),
@@ -90,9 +101,12 @@ def merge_into(world_row: dict, d: dict) -> None:
            "d_div_stab": d.get("div_stab"), "d_streak": d.get("streak"), "d_payout": d.get("payout"), "d_debt": d.get("debt"),
            "d_sc_inc": d.get("sc_inc"), "d_sc_dg": d.get("sc_dg"), "d_sc_eg": d.get("sc_eg"), "d_roic": d.get("roic"),
            "d_pio": d.get("pio"), "d_shares": d.get("shares"), "d_rev90": d.get("rev90"), "d_mom121": d.get("mom121"),
-           "d_fcfy": d.get("fcfy"), "d_dcf": d.get("dcf"), "d_src": d.get("src"), "d_t": d.get("t")}
+           "d_fcfy": d.get("fcfy"), "d_dcf": d.get("dcf"), "d_src": d.get("src"), "d_t": d.get("t"),
+           "d_roic_avg": d.get("roic_avg"), "d_warn": d.get("warn"), "d_nocut": d.get("nocut")}
     if d.get("short"):
         out["d_short"] = 1
+    if d.get("loss"):
+        out["d_loss"] = 1
     if d.get("debt_inf"):
         out["d_debt"] = 99.0  # „nie tilgbar“ als sehr großer Wert, damit Filter „höchstens x Jahre“ greifen
     if d.get("dy") is not None and d.get("net_div") is not None:
@@ -104,6 +118,11 @@ def merge_into(world_row: dict, d: dict) -> None:
             base = 1 + d["exp"] - dy
             if base > 0:
                 out["d_exp"] = round(base * (then / price) ** (1 / 5) - 1 + dy, 4)
+        low = valuation.cautious_return(d["fair"], price, d.get("g_lo"), d.get("dy"))
+        if low is not None:
+            out["d_exp_lo"] = round(low, 4)
+        if trap.is_trap(out["d_dev"], d.get("warn")):
+            out["d_trap"] = 1
     elif d.get("rating"):
         out["d_rating"] = d["rating"]
     world_row.update({k: v for k, v in out.items() if v is not None})
@@ -121,9 +140,9 @@ def mtime() -> float:
 def _is_fresh(entry: dict | None, now: float) -> bool:
     if not entry:
         return False
-    if "err" not in entry and entry.get("v", 1) < VERSION and entry.get("stab") is not None and entry.get("growth") is None:
+    if "err" not in entry and entry.get("v", 1) < VERSION:
         return False
-    ttl = ERROR_RETRY if "err" in entry else config.TTL_DEEP
+    ttl = ERROR_RETRY if "err" in entry or entry.get("sec_err") else config.TTL_DEEP
     return now - entry.get("t", 0) < ttl
 
 
@@ -146,7 +165,12 @@ def _run(universe: list[dict]) -> None:
                 continue
             for attempt in range(2):
                 try:
-                    result = compact(service.summary_row(sym, light=True, isin=item.get("isin")))
+                    row = service.summary_row(sym, light=True, isin=item.get("isin"))
+                    result = compact(row)
+                    rueckblick.put(sym, row.get("monthly"))
+                    if result.get("sec_err"):
+                        with _lock:
+                            _state["sec_errors"] += 1
                     break
                 except YFRateLimitError:
                     with _lock:
@@ -176,6 +200,7 @@ def _run(universe: list[dict]) -> None:
                 break
     finally:
         _flush()
+        rueckblick.flush()
         with _lock:
             _state.update(running=False, current=None, finished=time.time())
 
@@ -192,7 +217,7 @@ def start(universe: list[dict], manual: bool = False) -> bool:
             return False
         now = time.time()
         fresh = sum(_is_fresh(_store["rows"].get(u["symbol"]), now) for u in universe)
-        _state.update(running=True, paused=False, done=0, total=len(universe), fresh=fresh, errors=0,
+        _state.update(running=True, paused=False, done=0, total=len(universe), fresh=fresh, errors=0, sec_errors=0,
                       started=now, finished=None, last_error=None)
         _stop.clear()
     if manual:
@@ -209,7 +234,7 @@ def run_for(universe: list[dict], seconds: float) -> dict:
         _store["paused"] = False
         now = time.time()
         fresh = sum(_is_fresh(_store["rows"].get(u["symbol"]), now) for u in universe)
-        _state.update(running=True, paused=False, done=0, total=len(universe), fresh=fresh, errors=0,
+        _state.update(running=True, paused=False, done=0, total=len(universe), fresh=fresh, errors=0, sec_errors=0,
                       started=now, finished=None, last_error=None)
         _stop.clear()
     timer = threading.Timer(seconds, _stop.set)
@@ -238,6 +263,8 @@ def status(universe_size: int | None = None) -> dict:
         now = time.time()
         valid = [r for r in _store["rows"].values() if "err" not in r]
         st["analysed"] = len(valid)
-        st["stale"] = sum(now - r.get("t", 0) >= config.TTL_DEEP for r in valid)
+        st["stale"] = sum(now - r.get("t", 0) >= config.TTL_DEEP or r.get("v", 1) < VERSION for r in valid)
+        # belastbar: Gewinnreihe über mindestens fünf Jahre (Stabilität und fairer Wert sind dann aussagekräftig)
+        st["long_history"] = sum(1 for r in valid if r.get("stab") is not None and not r.get("short"))
     st["universe"] = universe_size
     return st

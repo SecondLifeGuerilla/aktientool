@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gzip
 import io
 import json
 import logging
@@ -27,7 +28,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # Teile des Caches, die der Server braucht (alles andere lädt er bei Bedarf selbst)
-BUNDLE_KEYS = re.compile(r"^(welt|tiefenanalyse|lsx_handelsliste|trusts_fonds|trust_positionen_.+|abschlag_kennzahlen_.+)\.json$")
+BUNDLE_KEYS = re.compile(r"^(welt|tiefenanalyse|rueckblick|lsx_handelsliste|trusts_fonds|trust_positionen_.+|abschlag_kennzahlen_.+)\.json$")
+# Monatskurse aller Aktien (Grundlage des Rückblicks): zu groß für den Server, bleiben nur für den nächsten Lauf liegen
+MONTHLY_FILE = "monatskurse.json.gz"
 SNAPSHOT_EXTRA = "abschlag_holdings.json"
 WORLD_REBUILD_AFTER = 20 * 3600  # Weltauswahl täglich neu, mit etwas Spielraum für schwankende Startzeiten
 
@@ -47,6 +50,27 @@ def _restore(out: Path) -> None:
     if bundle.exists():
         manifest = remote.extract(bundle.read_bytes())
         log.info("Letzten Stand übernommen (gebaut %s)", manifest.get("built"))
+    monthly = out / MONTHLY_FILE
+    if monthly.exists():
+        from aktientool import cache, config
+        try:
+            cache.store(config.MONTHLY_KEY, json.loads(gzip.decompress(monthly.read_bytes())))
+        except (OSError, ValueError) as e:  # beschädigt: Die Tiefenanalyse füllt die Kurse wieder auf
+            log.warning("Monatskurse nicht lesbar: %s", e)
+
+
+def _rueckblick(out: Path, symbols: set[str]) -> None:
+    """Rückblick des Score-Checks neu rechnen; die Monatskurse bleiben für den nächsten Lauf im Ordner."""
+    from aktientool import cache, config, rueckblick
+    result = rueckblick.build_now(symbols)
+    prices = cache.peek(config.MONTHLY_KEY) or {}
+    # Aktien, die nicht mehr zur Weltauswahl gehören, fallen weg
+    prices = {s: p for s, p in prices.items() if s in symbols}
+    if prices:
+        raw = json.dumps(prices, separators=(",", ":")).encode()
+        (out / MONTHLY_FILE).write_bytes(gzip.compress(raw, 9, mtime=0))
+    ok = sum(1 for r in result["results"].values() if r.get("available"))
+    log.info("Rückblick: %d Aktien mit Monatskursen, %d von %d Auswertungen", len(prices), ok, len(result["results"]))
 
 
 def _bundle(out: Path, extra: dict) -> None:
@@ -124,9 +148,15 @@ def main() -> int:
         def run():
             nonlocal deep_status
             deep_status = deep.run_for(universe, args.deep_minutes * 60)
-            log.info("Tiefenanalyse: %d von %d Aktien analysiert, %d Fehler", deep_status["analysed"],
-                     len(universe), deep_status["errors"])
+            log.info("Tiefenanalyse: %d von %d Aktien analysiert, %d Fehler, %d mit mindestens 5 Jahren Daten",
+                     deep_status["analysed"], len(universe), deep_status["errors"], deep_status["long_history"])
+            if deep_status["sec_errors"]:
+                # als Hinweis im Workflow sichtbar: Ohne SEC haben US-Aktien nur 3 bis 4 Jahre Bilanzdaten
+                print(f"::warning title=SEC EDGAR nicht erreichbar::Bei {deep_status['sec_errors']} Aktien fehlten die "
+                      "SEC-Daten (Kennung AKTIENTOOL_SEC_USER_AGENT prüfen). Sie werden morgen erneut versucht.")
         _step("Tiefenanalyse", run)
+    if universe:
+        _step("Rückblick", lambda: _rueckblick(out, {u["symbol"] for u in universe}))
 
     if universe:  # Tagesstand mit den Ergebnissen der Tiefenanalyse (überschreibt den von heute früh)
         data = json.loads(world.payload(compressed=False))
