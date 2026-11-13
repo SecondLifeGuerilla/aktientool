@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     env:
-      AKTIENTOOL_SEC_USER_AGENT: "Aktientool (GitHub-Workflow ${{ github.repository }}) aktientool@example.com"
+      # Die SEC lehnt Kennungen ab, in denen „GitHub“ vorkommt (403, „Undeclared Automated Tool“): Damit lief die
+      # Tiefenanalyse lange ganz ohne SEC-Daten. Eigene Kontaktadresse: Repository-Variable SEC_USER_AGENT
+      # (Settings → Secrets and variables → Actions → Variables), Form „Name kontakt@domain“, ohne „GitHub“.
+      AKTIENTOOL_SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT || 'Aktientool lokal aktientool@example.com' }}
       DATA_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
