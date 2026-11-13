@@ -700,6 +700,9 @@ def _prepared() -> dict | None:
     alt = data.pop("alt_isins", {})
     # eigene Korrekturen zur Handelbarkeit kommen erst bei der Auslieferung dazu (je Anfrage, siehe payload)
     listing = lsx.current()
+    # Fonds auch aus einer Weltauswahl entfernen, die vor dem Namensfilter gebaut wurde
+    data["stocks"] = [r for r in data["stocks"] if not FUND_NAME.search(r.get("name") or "")]
+    data["count"] = len(data["stocks"])
     for r in data["stocks"]:
         deep.merge_into(r, deep_rows.get(r["symbol"]))
         _mark_tradable(r, alt.get(r["symbol"]), listing, {})
